@@ -1,5 +1,8 @@
 import scanpy as sc
+import scvi.dataset
 import anndata
+
+from data_utils import load_tabula_muris
 
 def process_dataset(get_dataset, args):
     if args.subsample_genes < 0:
