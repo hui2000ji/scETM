@@ -77,6 +77,7 @@ def train(model, adata: anndata.AnnData, args,
         ('lr-decay', args.lr_decay),
         ('n_cells', adata.n_obs),
         ('n_genes', adata.n_vars),
+        ('n_edges', adata.X.sum()),
         ('n_labels', adata.obs.cell_types.nunique()),
         ('ckpt_dir', train_instance_name),
         ('true_label_dist', ', '.join(
@@ -195,9 +196,8 @@ def train(model, adata: anndata.AnnData, args,
 if __name__ == '__main__':
     args = parser.parse_args()
     adata = available_datasets[args.dataset_str].get_dataset(args)
-    n_labels = adata.obs.cell_types.nunique()
     if not args.n_labels:
-        args.n_labels = n_labels
+        args.n_labels = adata.obs.cell_types.nunique()
     if not args.eval_batches:
         args.eval_batches = int(np.round(1000000 / args.batch_size))
 

@@ -29,18 +29,21 @@ class DatasetConfig:
 def get_HCL_adult_thyroid(args):
     import pickle
     with open('../data/HCL/AdultThyroid.pickle', 'rb') as f:
-        return pickle.load(f)
+        return pickle.load(f).to_anndata()
 
 def get_TM_pancreas(args):
     import pickle
     with open('../data/TM/FACS_pancreas.pickle', 'rb') as f:
-        return pickle.load(f)
+        return pickle.load(f).to_anndata()
 
 def get_cortex(args):
-    adata = scvi.dataset.CortexDataset('../data/cortex',
-                                       total_genes=(args.subsample_genes if args.subsample_genes else None)).to_anndata()
+    return scvi.dataset.CortexDataset('../data/cortex',
+                                      total_genes=(args.subsample_genes if args.subsample_genes else None)).to_anndata()
 
-
+def get_mouse_pancreas(args):
+    import pickle
+    with open('../data/MousePancreas/scvi_dataset.pickle', 'rb') as f:
+        return pickle.load(f).to_anndata()
 
 cortex_config = DatasetConfig("cortex", 558, 7, get_cortex)
 prefrontal_cortex_config = DatasetConfig("prefrontalCortex", 158, 16, lambda args:
@@ -48,5 +51,6 @@ prefrontal_cortex_config = DatasetConfig("prefrontalCortex", 158, 16, lambda arg
 tabula_muris_config = DatasetConfig("TM", 23433, 82, lambda args: load_tabula_muris())
 HCL_adult_thyroid_config = DatasetConfig("HCLAdultThyroid", 24411, 8, get_HCL_adult_thyroid)
 TM_pancreas_config = DatasetConfig("TMPancreas", 23433, 9, get_TM_pancreas)
+mouse_pancreas_config = DatasetConfig("MousePancrase", 14878, 13, get_mouse_pancreas)
 available_datasets = dict(cortex=cortex_config, prefrontalCortex=prefrontal_cortex_config, TM=tabula_muris_config,
-                          HCLAdultThyroid=HCL_adult_thyroid_config, TMPancreas=TM_pancreas_config)
+                          HCLAdultThyroid=HCL_adult_thyroid_config, TMPancreas=TM_pancreas_config, mousePancreas=mouse_pancreas_config)
