@@ -32,7 +32,7 @@ def load_mat(root, generate_df=False):
     return mat_dense
 
 
-def load_tabula_muris(mat_path='../data/TM/FACS.csv', anno_path='../data/TM/annotations_facs.csv'):
+def load_tabula_muris(mat_path='TM/FACS.csv', anno_path='TM/annotations_facs.csv'):
     if os.path.exists('../data/TM/FACS.pickle'):
         import pickle
         with open('../data/TM/FACS.pickle', 'rb') as f:
@@ -51,10 +51,12 @@ def load_tabula_muris(mat_path='../data/TM/FACS.csv', anno_path='../data/TM/anno
     batch_id = cell_annotations['plate.barcode'].map(lambda barcode: barcode_to_id[barcode]).values.astype('int32')
     dataset.populate_from_data(df.values, None, batch_id, labels, df.columns,
                                cell_types, cell_attributes)
+    adata = dataset.to_anndata()
+    adata = adata[adata.X.sum(1) > 0, adata.X.sum(0) > 0]
     import pickle
-    with open('../data/TM/FACS.pickle', 'wb') as f:
-        pickle.dump(dataset, f)
-    return dataset
+    with open('TM/FACS.pickle', 'wb') as f:
+        pickle.dump(adata, f)
+    return adata
 
 
 def read_LINE(path, n_cells, n_genes):
@@ -228,14 +230,17 @@ def sample_batch(sampled_edges, n_neg_samples, node_sampler):
     return cells, genes, neg_genes
 
 
-def export_sparse(path, mat, cells, genes, append=False):
+def export_sparse(path, mat, cells=None, genes=None, first_row=False):
+    if cells is None and genes is None:
+        cells, genes = mat.shape
     if isinstance(cells, int):
         cells = np.arange(cells)
     if isinstance(genes, int):
         genes = np.arange(genes)
-    with open(path, 'a' if append else 'w') as f:
-        f.write('{} {}\n'.format(len(cells), len(genes)))
+    with open(path, 'w') as f:
         rows, cols = mat.nonzero()
+        if first_row:
+            f.write('{} {}\n'.format(len(cells) + len(genes), rows.size))
         for i, j in zip(rows, cols):
             f.write('c{} g{} {:g}\n'.format(cells[i], genes[j], mat[i, j]))
 

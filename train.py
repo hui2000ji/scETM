@@ -1,4 +1,3 @@
-import time
 import os
 import sys
 import shutil
@@ -10,20 +9,23 @@ from collections import defaultdict
 import numpy as np
 import anndata
 import scanpy as sc
-import matplotlib.pyplot as plt
 import torch
 from torch import optim
 
 from edgesampler import NonZeroEdgeSampler, EdgeSampler, VAEdgeSampler
-from train_utils import get_beta, get_epsilon, get_eta, get_train_instance_name, logging, get_logging_items, draw_embeddings
+from train_utils import get_beta, get_epsilon, get_eta, \
+    get_train_instance_name, logging, get_logging_items, draw_embeddings
 from datasets import available_datasets
 from my_parser import parser
 from model import CellGeneModel
 
-sc.settings.set_figure_params(dpi=120, dpi_save=300, facecolor='white', fontsize=10, figsize=(10, 10))
+sc.settings.set_figure_params(
+    dpi=120, dpi_save=300, facecolor='white', fontsize=10, figsize=(10, 10))
+
 
 def train(model, adata: anndata.AnnData, args,
-          device=torch.device("cuda:0" if torch.cuda.is_available() else "cpu")):
+          device=torch.device(
+              "cuda:0" if torch.cuda.is_available() else "cpu")):
     # set up initial learning rate and optimizer
     lr = args.lr
     optimizer = optim.Adam(model.parameters(), lr=lr)
@@ -81,7 +83,8 @@ def train(model, adata: anndata.AnnData, args,
         ('n_labels', adata.obs.cell_types.nunique()),
         ('ckpt_dir', train_instance_name),
         ('true_label_dist', ', '.join(
-            [f'{name}: {count}' for name, count in adata.obs.cell_types.value_counts().iteritems()])),
+            [f'{name}: {count}' for name, count in
+             adata.obs.cell_types.value_counts().iteritems()])),
         ('argv', ' '.join(sys.argv))
     ], ckpt_dir)
     tracked_items = defaultdict(list)
@@ -138,12 +141,14 @@ def train(model, adata: anndata.AnnData, args,
                 next_checkpoint += args.log_every
 
                 # display log and save embedding visualization
-                items = get_logging_items(step, lr, hyper_param_dict['tau'], args, adata,
-                                          tracked_items, tracked_metric, cell_types)
-                msg = logging(items, ckpt_dir)
-                draw_embeddings(adata=adata, step=step,
-                                args=args, cell_types=cell_types, embeddings=model.get_cell_emb_weights().items(),
-                                train_instance_name=train_instance_name, ckpt_dir=ckpt_dir)
+                items = get_logging_items(
+                    step, lr, hyper_param_dict['tau'], args, adata,
+                    tracked_items, tracked_metric, cell_types)
+                logging(items, ckpt_dir)
+                draw_embeddings(
+                    adata=adata, step=step, args=args, cell_types=cell_types,
+                    embeddings=model.get_cell_emb_weights().items(),
+                    train_instance_name=train_instance_name, ckpt_dir=ckpt_dir)
 
                 # checkpointing
                 torch.save(model.state_dict(), os.path.join(
@@ -151,6 +156,7 @@ def train(model, adata: anndata.AnnData, args,
                 torch.save(optimizer.state_dict(),
                            os.path.join(ckpt_dir, 'opt-%d' % step))
 
+                # lr decay
                 if args.lr_decay:
                     lr = lr * args.lr_decay
                     for param_group in optimizer.param_groups:
@@ -166,13 +172,13 @@ def train(model, adata: anndata.AnnData, args,
             sampler.join(0.1)
 
         # keep only the best checkpoints, and delete the rest
-        metric_list = sorted(
-            list(tracked_metric[args.tracked_metric].items()), key=lambda x: x[1])
+        metric_list = sorted(list(
+            tracked_metric[args.tracked_metric].items()), key=lambda x: x[1])
         if not metric_list:
             for metric in tracked_metric:
                 if tracked_metric[metric]:
-                    metric_list = sorted(
-                        list(tracked_metric[metric].items()), key=lambda x: x[1])
+                    metric_list = sorted(list(
+                        tracked_metric[metric].items()), key=lambda x: x[1])
                     break
         if len(metric_list) > 3:
             for step_, metric in metric_list[:-3]:
@@ -186,7 +192,8 @@ def train(model, adata: anndata.AnnData, args,
                 if cell_type_key.endswith('cell_type'):
                     prefix = cell_type_key[0]
                     cell_type = cell_types[cell_type_key]
-                    with open(os.path.join(ckpt_dir, prefix + '_cell_type.pickle'), 'wb') as f_:
+                    with open(os.path.join(ckpt_dir, prefix +
+                                           '_cell_type.pickle'), 'wb') as f_:
                         pickle.dump(cell_type, f_)
         except:
             import traceback

@@ -4,14 +4,15 @@ import os
 import anndata
 import numpy as np
 import scanpy as sc
-import matplotlib.pyplot as plt
-from sklearn.metrics import adjusted_rand_score, adjusted_mutual_info_score, normalized_mutual_info_score
+from sklearn.metrics import adjusted_rand_score, adjusted_mutual_info_score, \
+    normalized_mutual_info_score
 
 
 def get_train_instance_name(args, adata: anndata.AnnData):
     strs = [
         args.dataset_str,
-        args.model + args.emb_combine if args.model.startswith('vGraph') else args.model]
+        args.model + args.emb_combine
+        if args.model.startswith('vGraph') else args.model]
     for tuple_ in (
             ('genes', args.subsample_genes, adata.n_vars),
             ('nLabels', args.n_labels, adata.obs.cell_types.nunique()),
@@ -111,14 +112,14 @@ def get_logging_items(step, lr, gumbel_tau, args, adata,
         if cell_type_key.endswith('cell_type'):
             prefix = cell_type_key[0]
             cell_type = cell_types[cell_type_key]
-            tracked_metric['%c_lbl' % prefix][step] = [(cell_type == i).sum() for i in
-                                                       range(args.n_labels)]
-            tracked_metric['%c_nmi' % prefix][step] = normalized_mutual_info_score(
-                cell_type, adata.obs.cell_types)
-            tracked_metric['%c_ari' % prefix][step] = adjusted_rand_score(
-                cell_type, adata.obs.cell_types)
-            tracked_metric['%c_ami' % prefix][step] = adjusted_mutual_info_score(
-                cell_type, adata.obs.cell_types)
+            tracked_metric['%c_lbl' % prefix][step] = \
+                [(cell_type == i).sum() for i in range(args.n_labels)]
+            tracked_metric['%c_nmi' % prefix][step] = \
+                normalized_mutual_info_score(cell_type, adata.obs.cell_types)
+            tracked_metric['%c_ari' % prefix][step] = \
+                adjusted_rand_score(cell_type, adata.obs.cell_types)
+            tracked_metric['%c_ami' % prefix][step] = \
+                adjusted_mutual_info_score(cell_type, adata.obs.cell_types)
             items.extend([
                 ('%c_lbl' % prefix, str(
                     tracked_metric['%c_lbl' % prefix][step])),
@@ -126,7 +127,8 @@ def get_logging_items(step, lr, gumbel_tau, args, adata,
                  tracked_metric['%c_nmi' % prefix][step]),
                 ('%c_ari' % prefix, '%7.4f' %
                  tracked_metric['%c_ari' % prefix][step]),
-                ('%c_ami' % prefix, '%7.4f' % tracked_metric['%c_ami' % prefix][step])])
+                ('%c_ami' % prefix, '%7.4f' %
+                 tracked_metric['%c_ami' % prefix][step])])
         elif cell_type_key.endswith('gene_type'):
             prefix = cell_type_key[0]
             gene_type = cell_types[cell_type_key]
@@ -157,13 +159,16 @@ def draw_embeddings(adata: anndata.AnnData, step: int, args, cell_types: dict,
         adata.obsm[emb_name] = emb
         sc.pp.neighbors(adata, use_rep=emb_name, n_neighbors=args.n_neighbors)
         sc.tl.umap(adata, min_dist=args.min_dist, spread=args.spread)
-        fig = sc.pl.umap(adata, color=cell_type_keys, show=show, return_fig=True)
+        fig = sc.pl.umap(adata, color=cell_type_keys,
+                         show=show, return_fig=True)
         if save:
             fig.savefig(
-                os.path.join(ckpt_dir, f'{train_instance_name}_step{step}.jpg'),
+                os.path.join(
+                    ckpt_dir, f'{train_instance_name}_step{step}.jpg'),
                 dpi=300, bbox_inches='tight'
             )
         fig.clf()
+
 
 def _start_shell(local_ns):
     # An interactive shell useful for debugging/development.
