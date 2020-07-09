@@ -12,7 +12,8 @@ import scanpy as sc
 import torch
 from torch import optim
 
-from edgesampler import NonZeroEdgeSampler, EdgeSampler, VAEdgeSampler
+from edgesampler import NonZeroEdgeSampler, EdgeSampler, VAEdgeSampler, \
+    VAEdgeSamplerPool
 from train_utils import get_beta, get_epsilon, get_eta, \
     get_train_instance_name, logging, get_logging_items, draw_embeddings
 from datasets import available_datasets
@@ -33,7 +34,8 @@ def train(model, adata: anndata.AnnData, args,
 
     # Samplers
     if args.alias_sampling:
-        cell_gene_sampler = VAEdgeSampler(adata, args)
+        # cell_gene_sampler = VAEdgeSampler(adata, args)
+        cell_gene_sampler = VAEdgeSamplerPool(2, adata, args)
     else:
         cell_gene_sampler = NonZeroEdgeSampler(adata, args)
     samplers = [cell_gene_sampler]
@@ -113,6 +115,7 @@ def train(model, adata: anndata.AnnData, args,
                 'epsilon': get_epsilon(args, step),
                 'zeta': args.max_zeta,
                 'eta': get_eta(args, step),
+                'lambda': args.max_lambda,
                 'neg_weight': args.neg_weight
             }
 

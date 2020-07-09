@@ -29,7 +29,7 @@ parser.add_argument('--max-delta', type=float, default=0., help='max weight for 
 parser.add_argument('--max-epsilon', type=float, default=0., help='max weight for LINE cg/gc reconstruction')
 parser.add_argument('--max-zeta', type=float, default=0., help='max weight for vGraph word node reconstruction')
 parser.add_argument('--max-eta', type=float, default=0., help='max weight for cell type center distancing')
-parser.add_argument('--neg-weight', type=float, default=1/16, help="weight of negative sample weights")
+parser.add_argument('--max-lambda', type=float, default=0., help='max weight for mutual information of batch and inferred cell type')
 parser.add_argument('--cyclic-anneal', type=int, default=0, help='cyclic annealing of beta term')
 parser.add_argument('--linear-anneal', type=int, default=1200, help='linear annealing of beta term')
 parser.add_argument('--linear-anneal-eta', type=int, default=0, help='linear annealing of cell type center distancing term')
@@ -48,7 +48,8 @@ parser.add_argument('--tracked-metric', type=str, default='q_nmi', help='metric 
 parser.add_argument('--g2c-factor', type=float, default=1., help='ratio between g2c and c2g losses. '
                                                                  'Only valid for vGraph2 / TwoWayCellGeneModel')
 parser.add_argument('--neg-power', type=float, default=0.75, help='Power parameter in negative sampling')
-parser.add_argument('--neg-samples', type=int, default=32, help='Number of negative samplers per training sample')
+parser.add_argument('--neg-samples', type=int, default=5, help='Number of negative samplers per training sample')
+parser.add_argument('--neg-weight', type=float, default=1, help="weight of negative sample weights")
 parser.add_argument('--gumbel-max', type=float, default=1., help='Initial (Maximum) gumbel tau')
 parser.add_argument('--gumbel-min', type=float, default=0.3, help='Minimum gumbel tau')
 parser.add_argument('--gumbel-anneal', type=float, default=0.00005, help='Negative log of multiplicative coefficient of gumbel tau')

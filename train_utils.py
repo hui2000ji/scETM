@@ -155,6 +155,8 @@ def draw_embeddings(adata: anndata.AnnData, step: int, args, cell_types: dict,
                 adata.obs[prefix] = adata.obs[prefix].astype(
                     'str').astype('category')
     cell_type_keys.append('cell_types')
+    if adata.obs.batch_indices.nunique() > 1:
+        cell_type_keys = ['batch_indices'] + cell_type_keys
     for emb_name, emb in embeddings:
         adata.obsm[emb_name] = emb
         sc.pp.neighbors(adata, use_rep=emb_name, n_neighbors=args.n_neighbors)

@@ -111,6 +111,9 @@ class NonZeroEdgeSampler(threading.Thread):
         self.device = device
         self.n_epochs = n_epochs
         self.pipeline = Pipeline()
+        self.max_lambda = args.max_lambda
+        if self.max_lambda:
+            self.batch_indices = adata.obs.batch_indices.values
 
         if self.n_neg_samples:
             self.gene_prob = adata.X.sum(0) ** args.neg_power
@@ -133,32 +136,45 @@ class NonZeroEdgeSampler(threading.Thread):
                         self.genes_range, size=(num_same_genes,), p=self.gene_prob)
                     same_genes = genes[:, np.newaxis] == neg_genes
                     num_same_genes = same_genes.sum()
-                neg_genes = torch.LongTensor(neg_genes).to(self.device)
-                cells = torch.LongTensor(cells).to(self.device)
-                genes = torch.LongTensor(genes).to(self.device)
-                self.pipeline.set_message(dict(cells=cells, genes=genes, neg_genes=neg_genes))
+                neg_genes_tensor = torch.LongTensor(neg_genes).to(self.device)
+                cells_tensor = torch.LongTensor(cells).to(self.device)
+                genes_tensor = torch.LongTensor(genes).to(self.device)
+                result_dict = dict(cells=cells_tensor, genes=genes_tensor, neg_genes=neg_genes_tensor)
             else:
-                cells = torch.LongTensor(cells).to(self.device)
-                genes = torch.LongTensor(genes).to(self.device)
-                self.pipeline.set_message(dict(cells=cells, genes=genes))
+                cells_tensor = torch.LongTensor(cells).to(self.device)
+                genes_tensor = torch.LongTensor(genes).to(self.device)
+                result_dict = dict(cells=cells_tensor, genes=genes_tensor)
+            if self.max_lambda:
+                result_dict['batch_indices'] = self.batch_indices[cells]
+            self.pipeline.set_message(result_dict)
 
 
 class VAEdgeSampler(threading.Thread):
     def __init__(self, adata: anndata.AnnData, args,
-                 device=torch.device('cuda:0' if torch.cuda.is_available() else "cpu"), n_epochs=np.inf):
+                 device=torch.device('cuda:0' if torch.cuda.is_available() else "cpu"), n_epochs=np.inf,
+                 edge_sampler=None, node_sampler=None):
         super().__init__(daemon=True)
-        rows, cols = adata.X.nonzero()
-        weights = adata.X[rows, cols]
-        weights = weights / weights.sum()
-        gene_prob = adata.X.sum(0) ** args.neg_power
-        gene_prob = gene_prob / gene_prob.sum()
-        self.edge_sampler = VoseAlias(np.vstack((rows, cols)).T, weights)
-        self.node_sampler = VoseAlias(np.arange(adata.n_vars, dtype=np.int32), gene_prob)
+        if edge_sampler is None or node_sampler is None:
+            rows, cols = adata.X.nonzero()
+            weights = adata.X[rows, cols]
+            weights = weights / weights.sum()
+            gene_prob = adata.X.sum(0) ** args.neg_power
+            gene_prob = gene_prob / gene_prob.sum()
+            self.edge_sampler = VoseAlias(np.vstack((rows, cols)).T, weights)
+            self.node_sampler = VoseAlias(np.arange(adata.n_vars, dtype=np.int32), gene_prob)
+        elif edge_sampler is not None and node_sampler is not None:
+            self.edge_sampler = edge_sampler
+            self.node_sampler = node_sampler
+        else:
+            raise ValueError("Either provide both edge_sampler and node_sampler, or provide neither")
         self.batch_size = args.batch_size
         self.n_neg_samples = args.neg_samples
         self.device = device
         self.n_epochs = n_epochs
         self.pipeline = Pipeline()
+        self.max_lambda = args.max_lambda
+        if self.max_lambda:
+            self.batch_indices = adata.obs.batch_indices.values
 
     def run(self):
         count = 0
@@ -167,10 +183,13 @@ class VAEdgeSampler(threading.Thread):
             sampled_edges = self.edge_sampler.sample_n(self.batch_size)
             cells, genes, neg_genes = sample_batch(
                 sampled_edges, self.n_neg_samples, self.node_sampler)
-            cells = torch.LongTensor(cells).to(self.device)
-            genes = torch.LongTensor(genes).to(self.device)
-            neg_genes = torch.LongTensor(neg_genes).to(self.device)
-            self.pipeline.set_message(dict(cells=cells, genes=genes, neg_genes=neg_genes))
+            cells_tensor = torch.LongTensor(cells).to(self.device)
+            genes_tensor = torch.LongTensor(genes).to(self.device)
+            neg_genes_tensor = torch.LongTensor(neg_genes).to(self.device)
+            result_dict = dict(cells=cells_tensor, genes=genes_tensor, neg_genes=neg_genes_tensor)
+            if self.max_lambda:
+                result_dict['batch_indices'] = self.batch_indices[cells]
+            self.pipeline.set_message(result_dict)
 
 
 class Pipeline:
@@ -194,6 +213,43 @@ class Pipeline:
         self.producer_lock.acquire()
         self.message = message
         self.consumer_lock.release()
+
+
+class VAEdgeSamplerPool:
+    def __init__(self, n_samplers, adata: anndata.AnnData, args,
+                 device=torch.device('cuda:0' if torch.cuda.is_available() else "cpu"), n_epochs=np.inf):
+        rows, cols = adata.X.nonzero()
+        weights = adata.X[rows, cols]
+        weights = weights / weights.sum()
+        gene_prob = adata.X.sum(0) ** args.neg_power
+        gene_prob = gene_prob / gene_prob.sum()
+        edge_sampler = VoseAlias(np.vstack((rows, cols)).T, weights)
+        node_sampler = VoseAlias(np.arange(adata.n_vars, dtype=np.int32), gene_prob)
+        self.samplers = [
+            VAEdgeSampler(adata, args,
+                device=device,
+                n_epochs=n_epochs,
+                edge_sampler=edge_sampler,
+                node_sampler=node_sampler
+            ) for _ in range(n_samplers)]
+        self.current = 0
+        self.n_samplers = n_samplers
+
+    def start(self):
+        for sampler in self.samplers:
+            sampler.start()
+    
+    @property
+    def pipeline(self):
+        pl = self.samplers[self.current].pipeline
+        self.current += 1
+        if self.current == self.n_samplers:
+            self.current = 0
+        return pl
+
+    def join(self, seconds):
+        for sampler in self.samplers:
+            sampler.join(seconds)
 
 
 if __name__ == '__main__':
