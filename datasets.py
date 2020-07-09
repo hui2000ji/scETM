@@ -9,10 +9,11 @@ def process_dataset(get_dataset, args):
     if args.subsample_genes < 0:
         args.subsample_genes = available_datasets[args.dataset_str].n_genes
     adata = get_dataset(args)
+    if args.norm_cell_read_counts:
+        sc.pp.normalize_total(adata, target_sum=1e2)
     if args.subsample_genes < adata.n_vars:
         sc.pp.highly_variable_genes(adata, n_top_genes=args.subsample_genes)
-    if args.norm_cell_read_counts:
-        sc.pp.normalize_total(adata, target_sum=1e4)
+        adata = adata[:, adata.var.highly_variable]
     if args.quantile_norm:
         from sklearn.preprocessing import quantile_transform
         adata.X = quantile_transform(adata.X, axis=1, copy=True)

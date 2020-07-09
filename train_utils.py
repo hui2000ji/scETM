@@ -1,6 +1,7 @@
 import time
 import os
 
+import matplotlib.pyplot as plt 
 import anndata
 import numpy as np
 import scanpy as sc
@@ -41,8 +42,6 @@ def get_train_instance_name(args, adata: anndata.AnnData):
         if numeric_ != default:
             strs.append('%s%g' % (name, numeric_))
     for name, bool_ in (
-            ('bindEmb', args.bind_emb),
-            ('bindWc', args.bind_wc),
             ('gumbel', args.gumbel),
             ('qn', args.quantile_norm),
             ('log1p', args.log1p),
@@ -170,6 +169,7 @@ def draw_embeddings(adata: anndata.AnnData, step: int, args, cell_types: dict,
                 dpi=300, bbox_inches='tight'
             )
         fig.clf()
+        plt.close(fig)
 
 
 def _start_shell(local_ns):

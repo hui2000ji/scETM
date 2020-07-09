@@ -18,7 +18,7 @@ from train_utils import get_beta, get_epsilon, get_eta, \
     get_train_instance_name, logging, get_logging_items, draw_embeddings
 from datasets import available_datasets
 from my_parser import parser
-from model import CellGeneModel
+from model import CellGeneModel, vGraphEM
 
 sc.settings.set_figure_params(
     dpi=120, dpi_save=300, facecolor='white', fontsize=10, figsize=(10, 10))
@@ -34,8 +34,10 @@ def train(model, adata: anndata.AnnData, args,
 
     # Samplers
     if args.alias_sampling:
-        # cell_gene_sampler = VAEdgeSampler(adata, args)
-        cell_gene_sampler = VAEdgeSamplerPool(2, adata, args)
+        if args.n_samplers == 1:
+            cell_gene_sampler = VAEdgeSampler(adata, args)
+        elif args.n_samplers > 1:
+            cell_gene_sampler = VAEdgeSamplerPool(args.n_samplers, adata, args)
     else:
         cell_gene_sampler = NonZeroEdgeSampler(adata, args)
     samplers = [cell_gene_sampler]
@@ -117,29 +119,31 @@ def train(model, adata: anndata.AnnData, args,
                 'eta': get_eta(args, step),
                 'lambda': args.max_lambda,
                 'neg_weight': args.neg_weight,
-                'E': args.use_em and step % args.m_step == 0
+                'E': args.m_step and step % args.m_step == 0
             }
 
             # train for one step
-            model.train()
-            optimizer.zero_grad()
-            if args.use_em and step % args.m_step != 0:
-                fwd_dict = model(data_dict, hyper_param_dict, E_qz_logit=fwd_dict['E_qz_logit'])
+            if hyper_param_dict['E']:
+                model.eval()
+                model.E_step()
             else:
+                model.train()
+                optimizer.zero_grad()
                 fwd_dict = model(data_dict, hyper_param_dict)
-            loss, other_tracked_items = model.get_loss(
-                fwd_dict, data_dict, hyper_param_dict)
-            loss.backward()
-            optimizer.step()
+                loss, other_tracked_items = model.get_loss(
+                    fwd_dict, data_dict, hyper_param_dict)
+                loss.backward()
+                optimizer.step()
+
+                # log tracked items
+                tracked_items['loss'].append(loss.item())
+                for key, val in other_tracked_items.items():
+                    tracked_items[key].append(val.item())
+
             step += 1
             gumbel_tau = np.maximum(
                 gumbel_tau * np.exp(-args.gumbel_anneal),
                 args.gumbel_min)
-
-            # log tracked items
-            tracked_items['loss'].append(loss.item())
-            for key, val in other_tracked_items.items():
-                tracked_items[key].append(val.item())
 
             # eval
             if step >= next_checkpoint or step == args.updates:
@@ -213,7 +217,9 @@ if __name__ == '__main__':
     if not args.n_labels:
         args.n_labels = adata.obs.cell_types.nunique()
     if not args.eval_batches:
-        args.eval_batches = int(np.round(1000000 / args.batch_size))
+        args.eval_batches = int(np.round(3000000 / args.batch_size))
 
-    model = CellGeneModel(adata, args)
+    model_dict = dict(vGraph=CellGeneModel, vGraphEM=vGraphEM)
+    Model = model_dict[args.model]
+    model = Model(adata, args)
     train(model, adata, args)
