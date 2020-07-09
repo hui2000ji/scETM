@@ -45,6 +45,7 @@ class CellGeneModel(nn.Module):
         self.eval_batches = args.eval_batches
         self.encoder_depth = args.encoder_depth
         self.decoder_depth = args.decoder_depth
+        self.use_em = args.use_em
 
         self.cell_type_emb = nn.Linear(
             self.emb_dim, self.n_labels, bias=False).to(device)
@@ -103,7 +104,7 @@ class CellGeneModel(nn.Module):
             w_emb = self.cell_emb(all_cells).detach().cpu().numpy()
             return {'w_cell_emb': w_emb}
 
-    def forward(self, data_dict, hyper_param_dict=dict(tau=1.)):
+    def forward(self, data_dict, hyper_param_dict=dict(tau=1.), E_qz_logit=None):
         cells, genes = data_dict['cells'], data_dict['genes']
         tau = hyper_param_dict['tau']
 
@@ -123,14 +124,21 @@ class CellGeneModel(nn.Module):
         else:
             raise ValueError('emb_combine must be either prod, sum or cat')
 
+        pz_logit = self.cell_type_emb(w_emb)
+
         if self.training:
-            qz = F.gumbel_softmax(logits=qz_logit, tau=tau, hard=True)
+            if self.use_em:
+                if hyper_param_dict['E']:
+                    qz_logit = (pz_logit + self.cell_type_emb(c_emb)).clone().detach()
+                else:
+                    qz_logit = E_qz_logit
+                qz = F.softmax(qz_logit, dim=-1)
+            else:
+                qz = F.gumbel_softmax(logits=qz_logit, tau=tau, hard=True)
         else:
             tmp = qz_logit.argmax(dim=-1).reshape(qz_logit.shape[0], 1)
             qz = torch.zeros(qz_logit.shape).to(
-                self.device).scatter_(1, tmp, 1.)
-
-        pz_logit = self.cell_type_emb(w_emb)
+                self.device).scatter_(1, tmp, 1.)        
 
         if self.cell_type_dec is False:
             recon_c_emb = torch.mm(qz, self.cell_type_emb.weight)
@@ -138,11 +146,13 @@ class CellGeneModel(nn.Module):
             recon_c_emb = self.cell_type_dec(qz)
         if self.neg_samples and self.decoder_depth > 1:
             recon_c_emb = self.gene_decoder(recon_c_emb)
-        fwd_dict = {
+        fwd_dict = { 
             "qz": F.softmax(qz_logit, dim=-1),
             "pz": F.softmax(pz_logit, dim=-1),
             "w_emb": w_emb
         }
+        if self.use_em:
+            fwd_dict["E_qz_logit"] = qz_logit
         if self.neg_samples:
             fwd_dict["recon_c_emb"] = recon_c_emb
         else:
@@ -159,27 +169,35 @@ class CellGeneModel(nn.Module):
         prior_cell_type = self(dict(cells=all_cells, genes=genes))['pz']
         prior_cell_type = prior_cell_type.cpu().data.numpy().argmax(axis=-1)
 
-        posterior_cell_type = torch.zeros((self.n_cells, self.n_labels)).cpu()
+        posterior_cell_type = torch.zeros((self.n_cells, self.n_labels), device=self.device)
 
         for start in range(self.eval_batches):
             print('Testing: {:7d}/{:7d}{:33s}'.format(
                   start, self.eval_batches, ''), end='\r')
             data_dict = cell_gene_sampler.pipeline.get_message()
             q = self(data_dict)['qz']
-            q = q[:self.batch_size].cpu()
 
-            q_argmax = q.argmax(dim=-1).cpu()
+            if hard_accum:
+                q_argmax = q.argmax(dim=-1)
+                idx = torch.stack([data_dict['cells'], q_argmax])
+                val = torch.ones([q_argmax.shape[0]], device=self.device)
+            else:
+                axis_x = data_dict['cells'].unsqueeze(1).expand_as(q).flatten()
+                axis_y = torch.arange(q.shape[1], dtype=torch.long, device=self.device).unsqueeze(0).expand_as(q).flatten()
+                idx = torch.stack([axis_x, axis_y])
+                val = torch.flatten(q)
+            posterior_cell_type += torch.sparse.FloatTensor(idx, val, posterior_cell_type.shape).to_dense()
 
-            for idx, (w, c) in enumerate(zip(
-                    data_dict['cells'].cpu().numpy(),
-                    data_dict['genes'].cpu().numpy())):
+            '''
+            for idx, (w, c) in enumerate(zip(data_dict['cells'].cpu().numpy(), data_dict['genes'].cpu().numpy())):
                 if hard_accum:
                     posterior_cell_type[w, q_argmax[idx]] += 1
                 else:
                     posterior_cell_type[w, :] += q[idx, :]
+            '''
 
+        posterior_cell_type = posterior_cell_type.argmax(dim=-1)
         posterior_cell_type = posterior_cell_type.cpu().data.numpy()
-        posterior_cell_type = posterior_cell_type.argmax(axis=-1)
         kmeans = KMeans(n_clusters=self.n_labels, n_init=20)
         arr = self.get_cell_emb_weights()['w_cell_emb']
         kmeans.fit_transform(arr)

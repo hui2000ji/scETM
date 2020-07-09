@@ -116,13 +116,17 @@ def train(model, adata: anndata.AnnData, args,
                 'zeta': args.max_zeta,
                 'eta': get_eta(args, step),
                 'lambda': args.max_lambda,
-                'neg_weight': args.neg_weight
+                'neg_weight': args.neg_weight,
+                'E': args.use_em and step % args.m_step == 0
             }
 
             # train for one step
             model.train()
             optimizer.zero_grad()
-            fwd_dict = model(data_dict, hyper_param_dict)
+            if args.use_em and step % args.m_step != 0:
+                fwd_dict = model(data_dict, hyper_param_dict, E_qz_logit=fwd_dict['E_qz_logit'])
+            else:
+                fwd_dict = model(data_dict, hyper_param_dict)
             loss, other_tracked_items = model.get_loss(
                 fwd_dict, data_dict, hyper_param_dict)
             loss.backward()
