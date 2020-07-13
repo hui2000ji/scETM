@@ -32,33 +32,6 @@ def load_mat(root, generate_df=False):
     return mat_dense
 
 
-def load_tabula_muris(mat_path='TM/FACS.csv', anno_path='TM/annotations_facs.csv'):
-    if os.path.exists('../data/TM/FACS.pickle'):
-        import pickle
-        with open('../data/TM/FACS.pickle', 'rb') as f:
-            dataset = pickle.load(f)
-            return dataset
-    df = pd.read_csv(mat_path, index_col=0)
-    cell_annotations = pd.read_csv(anno_path, index_col=2)
-    cell_types = cell_annotations.cell_ontology_class.unique()
-    cell_type_to_label = {cell_type: i for i, cell_type in enumerate(cell_types)}
-    labels = cell_annotations.cell_ontology_class.map(lambda cell_type: cell_type_to_label[cell_type]).values.astype(
-        'int32')
-    cell_attributes = cell_annotations.to_dict('list')
-    dataset = scvi.dataset.GeneExpressionDataset()
-    unique_barcodes = cell_annotations['plate.barcode'].unique()
-    barcode_to_id = {barcode: i for i, barcode in enumerate(unique_barcodes)}
-    batch_id = cell_annotations['plate.barcode'].map(lambda barcode: barcode_to_id[barcode]).values.astype('int32')
-    dataset.populate_from_data(df.values, None, batch_id, labels, df.columns,
-                               cell_types, cell_attributes)
-    adata = dataset.to_anndata()
-    adata = adata[adata.X.sum(1) > 0, adata.X.sum(0) > 0]
-    import pickle
-    with open('TM/FACS.pickle', 'wb') as f:
-        pickle.dump(adata, f)
-    return adata
-
-
 def read_LINE(path, n_cells, n_genes):
     with open(path, 'r') as f:
         n_nodes, emb_dim = map(int, f.readline().split())
@@ -148,12 +121,12 @@ class VoseAlias(object):
         else:
             return self.table_alias[col]
 
-    def sample_n(self, size):
+    def sample_n(self, size, rng):
         """
         Yields a sample of size n from the distribution, and print the results to stdout.
         """
-        col = np.random.choice(self.list_prob, size=size)
-        ref = np.random.uniform(0., 1., size=size)
+        col = rng.choice(self.list_prob, size=size)
+        ref = rng.uniform(0., 1., size=size)
         mask_less_than_ref = self.table_prob[col] < ref
         col[mask_less_than_ref] = self.table_alias[col][mask_less_than_ref]
         return self.keys[col]
@@ -211,23 +184,6 @@ def make_distribution(graph_path, power=0.75, generate_dense=False):
     gene_degrees = gene_degrees / gene_degrees.sum()
     # return {(row, col): weight for row, col, weight in zip(rows, cols, edge_weights)}, {i: deg for i, deg in enumerate(gene_degrees)}, n_cells, n_genes, X
     return edges, edge_weights, gene_degrees, n_cells, n_genes, X
-
-
-def sample_batch(sampled_edges, n_neg_samples, node_sampler):
-    cells, genes = sampled_edges[:, 0], sampled_edges[:, 1]
-    expanded_genes = genes[:, np.newaxis]
-    batch_size = cells.shape[0]
-    neg_genes = node_sampler.sample_n(batch_size * n_neg_samples).reshape(batch_size, n_neg_samples)
-    same_genes = expanded_genes == neg_genes
-    num_same_genes = same_genes.sum()
-    while num_same_genes > 0:
-        neg_genes[same_genes] = node_sampler.sample_n(num_same_genes)
-        same_genes = expanded_genes == neg_genes
-        num_same_genes = same_genes.sum()
-    """neg_genes = np.zeros((batch_size, n_neg_samples), dtype=np.int32)
-    for i, gene in enumerate(genes):
-        neg_genes[i] = sample_neg_batch(gene, n_neg_samples, node_sampler)"""
-    return cells, genes, neg_genes
 
 
 def export_sparse(path, mat, cells=None, genes=None, first_row=False):

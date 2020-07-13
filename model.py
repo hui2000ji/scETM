@@ -1,8 +1,10 @@
+import scanpy as sc
 import anndata
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from sklearn.cluster import KMeans
+from torch.autograd import Function
 
 
 def get_emb(num_emb, emb_dim, n_enc_layers):
@@ -102,14 +104,13 @@ class CellGeneModel(nn.Module):
                 0, self.n_cells, 1, dtype=torch.long, device=self.device)
             w_emb = self.w_cell_emb(all_cells).detach().cpu().numpy()
             return {'w_cell_emb': w_emb}
-            
+
     def forward(self, data_dict, hyper_param_dict=dict(tau=1.)):
         cells, genes = data_dict['cells'], data_dict['genes']
         tau = hyper_param_dict['tau']
 
         w_cell_emb = self.w_cell_emb(cells)
         w_gene_emb = self.w_gene_emb(genes)
-
 
         pz_logit = self.cell_type_emb(w_cell_emb)
 
@@ -119,7 +120,8 @@ class CellGeneModel(nn.Module):
             qz_logit = self.cg_type_emb(w_cell_emb + w_gene_emb)
         elif self.emb_combine == 'cat':
             if self.decouple_pq:
-                qz_logit = self.cg_type_emb(torch.cat([w_cell_emb, w_gene_emb], dim=1))
+                qz_logit = self.cg_type_emb(
+                    torch.cat([w_cell_emb, w_gene_emb], dim=1))
             else:
                 qz_logit = self.cg_type_emb(
                     self.emb_compressor(torch.cat([w_cell_emb, w_gene_emb], dim=1)))
@@ -131,7 +133,7 @@ class CellGeneModel(nn.Module):
         else:
             tmp = qz_logit.argmax(dim=-1).reshape(qz_logit.shape[0], 1)
             qz = torch.zeros(qz_logit.shape).to(
-                self.device).scatter_(1, tmp, 1.)        
+                self.device).scatter_(1, tmp, 1.)
 
         if self.cell_type_dec is False:
             recon_c_emb = torch.mm(qz, self.cell_type_emb.weight)
@@ -139,7 +141,7 @@ class CellGeneModel(nn.Module):
             recon_c_emb = self.cell_type_dec(qz)
         if self.neg_samples and self.decoder_depth > 1:
             recon_c_emb = self.gene_decoder(recon_c_emb)
-        fwd_dict = { 
+        fwd_dict = {
             "qz": F.softmax(qz_logit, dim=-1),
             "pz": F.softmax(pz_logit, dim=-1),
             "w_emb": w_cell_emb
@@ -151,14 +153,16 @@ class CellGeneModel(nn.Module):
             fwd_dict["recon_c_gene"] = recon_c_logit
         return fwd_dict
 
-    def get_cell_type(self, cell_gene_sampler, hard_accum=False):
+    def get_cell_type(self, cell_gene_sampler, adata=None, args=None, hard_accum=False):
         self.eval()
         prior_cell_type = get_p_type(self)
-        posterior_cell_type = get_q_type(self, cell_gene_sampler, hard_accum)
-        kmeans_cell_type = get_k_type(self)
+        posterior_cell_type = get_q_type(
+            self, cell_gene_sampler, hard_accum)
+        louvain_cell_type = get_louvain_type(self, adata, args)
         return {'p_cell_type': prior_cell_type,
                 'q_cell_type': posterior_cell_type,
-                'k_cell_type': kmeans_cell_type}
+                'louvain_cell_type': louvain_cell_type
+                }
 
     def _get_c2g_loss(self, fwd_dict, data_dict, hyper_param_dict):
         genes = data_dict['genes']
@@ -295,7 +299,8 @@ class vGraphEM(nn.Module):
     def E_step(self):
         nonzero = self.nonzero
         self.pz_cw *= 0.
-        pc_zw = F.softmax(self.gene_decoder(self.cell_type_emb.weight), dim=-1).T
+        pc_zw = F.softmax(self.gene_decoder(
+            self.cell_type_emb.weight), dim=-1).T
         for start in range(0, len(nonzero), self.batch_size):
             cells = nonzero[start: start + self.batch_size, 0]
             genes = nonzero[start: start + self.batch_size, 1]
@@ -308,11 +313,13 @@ class vGraphEM(nn.Module):
             pz_cw = pcz_w / pcz_w.sum(1, keepdims=True)
             cells = cells.unsqueeze(1).expand_as(pz_cw).flatten()
             genes = genes.unsqueeze(1).expand_as(pz_cw).flatten()
-            labels = torch.arange(self.n_labels, dtype=torch.long, device=self.device).unsqueeze(0).expand_as(pz_cw).flatten()
+            labels = torch.arange(self.n_labels, dtype=torch.long, device=self.device).unsqueeze(
+                0).expand_as(pz_cw).flatten()
             idx = torch.stack([cells, genes, labels])
             val = pz_cw.flatten()
-            self.pz_cw += torch.sparse.FloatTensor(idx, val, self.pz_cw.shape).to_dense().cpu().detach()
-            
+            self.pz_cw += torch.sparse.FloatTensor(
+                idx, val, self.pz_cw.shape).to_dense().cpu().detach()
+
     def forward(self, data_dict, hyper_param_dict=dict(tau=1.)):
         cells, genes = data_dict['cells'], data_dict['genes']
         tau = hyper_param_dict['tau']
@@ -320,7 +327,8 @@ class vGraphEM(nn.Module):
         w_cell_emb = self.w_cell_emb(cells)
 
         pz_w = F.softmax(self.cell_type_emb(w_cell_emb), dim=-1)
-        pc_zw = F.softmax(self.gene_decoder(self.cell_type_emb.weight), dim=-1).T
+        pc_zw = F.softmax(self.gene_decoder(
+            self.cell_type_emb.weight), dim=-1).T
         # pc_z = F.softmax(self.cell_type_emb(c_gene_emb), dim=-1)
         pcz_w = pz_w * pc_zw[genes]
 
@@ -328,14 +336,15 @@ class vGraphEM(nn.Module):
 
         return dict(pcz_w=pcz_w, qz_w=qz_w, pz=pz_w)
 
-    def get_cell_type(self, cell_gene_sampler, hard_accum=False):
+    def get_cell_type(self, cell_gene_sampler, adata=None, args=None, hard_accum=False):
         self.eval()
         prior_cell_type = get_p_type(self)
-        posterior_cell_type = (self.pz_cw * self.X.unsqueeze(2)).sum(1).argmax(-1).cpu().detach().numpy()
-        kmeans_cell_type = get_k_type(self)
+        posterior_cell_type = (
+            self.pz_cw * self.X.unsqueeze(2)).sum(1).argmax(-1).cpu().detach().numpy()
+        louvain_cell_type = get_louvain_type(self, adata, args)
         return {'p_cell_type': prior_cell_type,
                 'q_cell_type': posterior_cell_type,
-                'k_cell_type': kmeans_cell_type}
+                'louvain_cell_type': louvain_cell_type}
 
     def get_loss(self, fwd_dict, data_dict, hyper_param_dict):
         pcz_w, qz_w = fwd_dict['pcz_w'], fwd_dict['qz_w']
@@ -348,19 +357,129 @@ class vGraphEM(nn.Module):
             loss = loss + hyper_param_dict['epsilon'] * BCE_gene_LINE
             new_items['Llg'] = BCE_gene_LINE
 
-        # word reconstruction loss from qz
-        if hyper_param_dict['zeta']:
-            recon_w_cell = torch.mm(qz, self.cell_type_emb.weight)
-            BCEw_cell = F.cross_entropy(
-                recon_w_cell, cells, reduction='sum') / cells.shape[0]
-            BCEw = self.g2c_factor * BCEw_cell
-
-            loss = loss + hyper_param_dict['zeta'] * BCEw
-            new_items['Lwc'] = BCEw_cell
-
         loss, new_items = get_gg_cc_loss(
             self, fwd_dict, data_dict, hyper_param_dict, loss, new_items)
         return loss, new_items
+
+
+class LINE(nn.Module):
+    def __init__(self, adata: anndata.AnnData, args,
+                 device=torch.device(
+                     "cuda:0" if torch.cuda.is_available() else "cpu")):
+        super().__init__()
+        self.emb_dim = args.emb_dim
+        self.n_labels = args.n_labels
+        self.device = device
+        self.n_cells = adata.n_obs
+        self.n_genes = adata.n_vars
+        self.neg_samples = args.neg_samples
+        self.batch_removal = args.max_lambda > 0
+
+        self.w_cell_emb = get_emb(
+            self.n_cells, self.emb_dim, 1).to(device)
+        if self.batch_removal:
+            self.batch_indices = torch.LongTensor(adata.obs.batch_indices.astype(int)).to(device)
+            self.batch_clf = nn.Sequential(
+                nn.Linear(self.emb_dim, self.emb_dim // 2),
+                nn.ReLU(),
+                nn.Linear(self.emb_dim // 2, adata.obs.batch_indices.nunique())
+            ).to(device)
+
+            class RevGrad(Function):
+                @staticmethod
+                def forward(ctx, input_):
+                    ctx.save_for_backward(input_)
+                    output = input_
+                    return output
+
+                @staticmethod
+                def backward(ctx, grad_output):
+                    grad_input = None
+                    if ctx.needs_input_grad[0]:
+                        grad_input = -grad_output * args.revgrad_weight
+                    return grad_input
+
+            self.revgrad = RevGrad.apply
+            
+        if self.neg_samples:
+            self.c_gene_emb = nn.Embedding(
+                self.n_genes, self.emb_dim).to(device)
+        else:
+            self.gene_decoder = get_dec(
+                self.n_genes, self.emb_dim, 1).to(device)
+        self.init_emb()
+
+
+    @staticmethod
+    def _init_emb(emb):
+        if isinstance(emb, nn.Linear):
+            nn.init.xavier_uniform_(emb.weight.data)
+            if emb.bias is not None:
+                emb.bias.data.fill_(0.0)
+        elif isinstance(emb, nn.Sequential):
+            for child in emb:
+                LINE._init_emb(child)
+
+    def init_emb(self):
+        for m in self.modules():
+            self._init_emb(m)
+
+    def get_cell_emb_weights(self):
+        return {'w_cell_emb': self.w_cell_emb.weight.detach().cpu().numpy()}
+
+    def forward(self, data_dict, hyper_param_dict):
+        cells = data_dict['cells']
+        w_cell_emb = self.w_cell_emb(cells)
+        fwd_dict = dict(w_cell_emb=w_cell_emb)
+        if self.batch_removal:
+            batch_logit = self.batch_clf(self.revgrad(w_cell_emb))
+            fwd_dict['batch_logit'] = batch_logit
+        return fwd_dict
+
+    def _get_c2g_loss_neg(self, fwd_dict, data_dict, hyper_param_dict,
+                          emb_name):
+        c_gene_emb = self.c_gene_emb(data_dict['genes'])
+        c_gene_emb_neg = self.c_gene_emb(data_dict['neg_genes']) * (-1)
+        w_cell_emb = fwd_dict[emb_name]
+        pos = F.logsigmoid((c_gene_emb * w_cell_emb).sum(dim=-1))
+        neg = F.logsigmoid(
+            (c_gene_emb_neg * w_cell_emb.unsqueeze(1)).sum(dim=-1)
+        ).sum(dim=-1)
+
+        return (pos + hyper_param_dict['neg_weight'] * neg).mean() * (-1.)
+
+    def get_LINE_loss(self, fwd_dict, data_dict, hyper_param_dict):
+        if self.neg_samples:
+            return self._get_c2g_loss_neg(
+                fwd_dict, data_dict, hyper_param_dict, 'w_cell_emb')
+        else:
+            genes = data_dict['genes']
+            recon_c_gene_LINE = self.gene_decoder(fwd_dict['w_cell_emb'])
+            BCE_gene_LINE = F.cross_entropy(
+                recon_c_gene_LINE, genes, reduction='sum') / genes.shape[0]
+            return BCE_gene_LINE
+
+    def get_loss(self, fwd_dict, data_dict, hyper_param_dict):
+        LINE_loss = self.get_LINE_loss(fwd_dict, data_dict, hyper_param_dict)
+        if hyper_param_dict['lambda']:
+            batch_CE = F.cross_entropy(
+                fwd_dict['batch_logit'],
+                self.batch_indices[data_dict['cells']],
+                reduction='sum'
+            ) / data_dict['cells'].shape[0]
+            loss = hyper_param_dict['lambda'] * batch_CE + LINE_loss
+            return loss, {'LINE': LINE_loss,'batchCE': batch_CE}
+        else:
+            return LINE_loss, {}
+
+    def get_cell_type(self, cell_gene_sampler, adata=None, args=None, hard_accum=False):
+        self.eval()
+        louvain_cell_type = get_louvain_type(self, adata, args)
+        k_cell_type = get_k_type(self)
+        return {
+            'louvain_cell_type': louvain_cell_type,
+            'k_cell_type': k_cell_type
+        }
 
 
 def get_gg_cc_loss(self, fwd_dict: dict, data_dict: dict,
@@ -399,18 +518,21 @@ def get_p_type(model, key='pz'):
     all_cells = torch.arange(
         0, model.n_cells, 1, dtype=torch.long, device=model.device)
     genes = torch.zeros_like(all_cells, device=model.device)
-    prior_cell_type = model(dict(cells=all_cells, genes=genes))[key].argmax(axis=-1)
+    prior_cell_type = model(dict(cells=all_cells, genes=genes))[
+        key].argmax(axis=-1)
     prior_cell_type = prior_cell_type.cpu().data.numpy()
     return prior_cell_type
 
+
 def get_q_type(model, cell_gene_sampler, hard_accum=False):
-    posterior_cell_type = torch.zeros((model.n_cells, model.n_labels), device=model.device)
+    posterior_cell_type = torch.zeros(
+        (model.n_cells, model.n_labels), device=model.device)
 
     for start in range(model.eval_batches):
         print('Testing: {:7d}/{:7d}{:33s}'.format(
-                start, model.eval_batches, ''), end='\r')
+            start, model.eval_batches, ''), end='\r')
         data_dict = cell_gene_sampler.pipeline.get_message()
-        q = model(data_dict)['qz']
+        q = model(data_dict)['qz'].detach()
 
         if hard_accum:
             q_argmax = q.argmax(dim=-1)
@@ -418,14 +540,31 @@ def get_q_type(model, cell_gene_sampler, hard_accum=False):
             val = torch.ones([q_argmax.shape[0]], device=model.device)
         else:
             axis_x = data_dict['cells'].unsqueeze(1).expand_as(q).flatten()
-            axis_y = torch.arange(q.shape[1], dtype=torch.long, device=model.device).unsqueeze(0).expand_as(q).flatten()
+            axis_y = torch.arange(q.shape[1], dtype=torch.long, device=model.device).unsqueeze(
+                0).expand_as(q).flatten()
             idx = torch.stack([axis_x, axis_y])
-            val = torch.flatten(q)
-        posterior_cell_type += torch.sparse.FloatTensor(idx, val, posterior_cell_type.shape).to_dense()
+            val = q.flatten()
+        posterior_cell_type += torch.sparse.FloatTensor(
+            idx, val, posterior_cell_type.shape).to_dense()
 
     posterior_cell_type = posterior_cell_type.argmax(dim=-1)
     posterior_cell_type = posterior_cell_type.cpu().data.numpy()
     return posterior_cell_type
+
+
+def get_louvain_type(model, adata, args):
+    adata.obsm['w_cell_emb'] = model.get_cell_emb_weights()['w_cell_emb']
+    for _ in range(10):
+        sc.pp.neighbors(adata, n_neighbors=args.n_neighbors, use_rep='w_cell_emb')
+        sc.tl.louvain(adata, resolution=args.louvain_resolution)
+        if adata.obs.louvain.nunique() < args.n_labels - 1:
+            args.louvain_resolution *= 1.2
+        elif adata.obs.louvain.nunique() > args.n_labels + 1:
+            args.louvain_resolution /= 1.2
+        else:
+            break
+    return adata.obs['louvain'].astype(int)
+
 
 def get_k_type(model):
     kmeans = KMeans(n_clusters=model.n_labels, n_init=20)

@@ -4,7 +4,7 @@ import anndata
 import numpy as np
 import torch
 
-from data_utils import sample_batch, VoseAlias
+from data_utils import VoseAlias
 
 
 class CellSampler(threading.Thread):
@@ -139,7 +139,8 @@ class NonZeroEdgeSampler(threading.Thread):
                 neg_genes_tensor = torch.LongTensor(neg_genes).to(self.device)
                 cells_tensor = torch.LongTensor(cells).to(self.device)
                 genes_tensor = torch.LongTensor(genes).to(self.device)
-                result_dict = dict(cells=cells_tensor, genes=genes_tensor, neg_genes=neg_genes_tensor)
+                result_dict = dict(
+                    cells=cells_tensor, genes=genes_tensor, neg_genes=neg_genes_tensor)
             else:
                 cells_tensor = torch.LongTensor(cells).to(self.device)
                 genes_tensor = torch.LongTensor(genes).to(self.device)
@@ -152,21 +153,25 @@ class NonZeroEdgeSampler(threading.Thread):
 class VAEdgeSampler(threading.Thread):
     def __init__(self, adata: anndata.AnnData, args,
                  device=torch.device('cuda:0' if torch.cuda.is_available() else "cpu"), n_epochs=np.inf,
-                 edge_sampler=None, node_sampler=None):
+                 edge_sampler=None, node_sampler=None, rng=None):
         super().__init__(daemon=True)
-        if edge_sampler is None or node_sampler is None:
+        if edge_sampler is None or node_sampler is None or rng is None:
             rows, cols = adata.X.nonzero()
             weights = adata.X[rows, cols]
             weights = weights / weights.sum()
             gene_prob = adata.X.sum(0) ** args.neg_power
             gene_prob = gene_prob / gene_prob.sum()
             self.edge_sampler = VoseAlias(np.vstack((rows, cols)).T, weights)
-            self.node_sampler = VoseAlias(np.arange(adata.n_vars, dtype=np.int32), gene_prob)
-        elif edge_sampler is not None and node_sampler is not None:
+            self.node_sampler = VoseAlias(
+                np.arange(adata.n_vars, dtype=np.int32), gene_prob)
+            self.rng = np.random.default_rng()
+        elif edge_sampler is not None and node_sampler is not None and rng is not None:
             self.edge_sampler = edge_sampler
             self.node_sampler = node_sampler
+            self.rng = rng
         else:
-            raise ValueError("Either provide both edge_sampler and node_sampler, or provide neither")
+            raise ValueError(
+                "Either provide both edge_sampler and node_sampler, or provide neither")
         self.batch_size = args.batch_size
         self.n_neg_samples = args.neg_samples
         self.device = device
@@ -180,13 +185,25 @@ class VAEdgeSampler(threading.Thread):
         count = 0
         while count < self.n_epochs:
             count += 1
-            sampled_edges = self.edge_sampler.sample_n(self.batch_size)
-            cells, genes, neg_genes = sample_batch(
-                sampled_edges, self.n_neg_samples, self.node_sampler)
+            sampled_edges = self.edge_sampler.sample_n(
+                self.batch_size, self.rng)
+            cells, genes = sampled_edges[:, 0], sampled_edges[:, 1]
+            expanded_genes = genes[:, np.newaxis]
+            batch_size = cells.shape[0]
+            neg_genes = self.node_sampler.sample_n(self.batch_size * self.n_neg_samples, self.rng) \
+                .reshape(self.batch_size, self.n_neg_samples)
+            same_genes = expanded_genes == neg_genes
+            num_same_genes = same_genes.sum()
+            while num_same_genes > 0:
+                neg_genes[same_genes] = self.node_sampler.sample_n(
+                    num_same_genes, self.rng)
+                same_genes = expanded_genes == neg_genes
+                num_same_genes = same_genes.sum()
             cells_tensor = torch.LongTensor(cells).to(self.device)
             genes_tensor = torch.LongTensor(genes).to(self.device)
             neg_genes_tensor = torch.LongTensor(neg_genes).to(self.device)
-            result_dict = dict(cells=cells_tensor, genes=genes_tensor, neg_genes=neg_genes_tensor)
+            result_dict = dict(cells=cells_tensor,
+                               genes=genes_tensor, neg_genes=neg_genes_tensor)
             if self.max_lambda:
                 result_dict['batch_indices'] = self.batch_indices[cells]
             self.pipeline.set_message(result_dict)
@@ -224,21 +241,23 @@ class VAEdgeSamplerPool:
         gene_prob = adata.X.sum(0) ** args.neg_power
         gene_prob = gene_prob / gene_prob.sum()
         edge_sampler = VoseAlias(np.vstack((rows, cols)).T, weights)
-        node_sampler = VoseAlias(np.arange(adata.n_vars, dtype=np.int32), gene_prob)
+        node_sampler = VoseAlias(
+            np.arange(adata.n_vars, dtype=np.int32), gene_prob)
         self.samplers = [
             VAEdgeSampler(adata, args,
-                device=device,
-                n_epochs=n_epochs,
-                edge_sampler=edge_sampler,
-                node_sampler=node_sampler
-            ) for _ in range(n_samplers)]
+                          device=device,
+                          n_epochs=n_epochs,
+                          edge_sampler=edge_sampler,
+                          node_sampler=node_sampler,
+                          rng=np.random.default_rng(i * 100 + np.random.randint(100))
+                         ) for i in range(n_samplers)]
         self.current = 0
         self.n_samplers = n_samplers
 
     def start(self):
         for sampler in self.samplers:
             sampler.start()
-    
+
     @property
     def pipeline(self):
         pl = self.samplers[self.current].pipeline
@@ -273,4 +292,3 @@ if __name__ == '__main__':
     print(edge_bins)
     print()
     print(gene_bins)
-            

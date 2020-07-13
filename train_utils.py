@@ -27,7 +27,7 @@ def get_train_instance_name(args, adata: anndata.AnnData):
             ('zeta', args.max_zeta),
             ('eta', args.max_eta),
             ('cycBeta', args.cyclic_anneal),
-            ('linBeta', args.linear_anneal),
+            ('linBeta', args.linear_anneal, 1200),
             ('linEpsilon', args.linear_anneal_epsilon),
             ('linEta', args.linear_anneal_eta),
             ('cLoss', args.g2c_factor, 1.),
@@ -112,7 +112,7 @@ def get_logging_items(step, lr, gumbel_tau, args, adata,
             prefix = cell_type_key[0]
             cell_type = cell_types[cell_type_key]
             tracked_metric['%c_lbl' % prefix][step] = \
-                [(cell_type == i).sum() for i in range(args.n_labels)]
+                [(cell_type == label).sum() for label in np.unique(cell_type)]
             tracked_metric['%c_nmi' % prefix][step] = \
                 normalized_mutual_info_score(cell_type, adata.obs.cell_types)
             tracked_metric['%c_ari' % prefix][step] = \
@@ -146,7 +146,7 @@ def draw_embeddings(adata: anndata.AnnData, step: int, args, cell_types: dict,
     cell_type_keys = []
     for cell_type_key in cell_types:
         if cell_type_key.endswith('cell_type'):
-            prefix = cell_type_key[0]
+            prefix = cell_type_key.split('_')[0]
             cell_type = cell_types[cell_type_key]
             if prefix in args.always_draw or step == args.updates:
                 cell_type_keys. append(prefix)
@@ -165,7 +165,7 @@ def draw_embeddings(adata: anndata.AnnData, step: int, args, cell_types: dict,
         if save:
             fig.savefig(
                 os.path.join(
-                    ckpt_dir, f'{train_instance_name}_step{step}.jpg'),
+                    ckpt_dir, f'{train_instance_name}_{emb_name}_step{step}.jpg'),
                 dpi=300, bbox_inches='tight'
             )
         fig.clf()

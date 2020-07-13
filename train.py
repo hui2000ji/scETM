@@ -18,7 +18,7 @@ from train_utils import get_beta, get_epsilon, get_eta, \
     get_train_instance_name, logging, get_logging_items, draw_embeddings
 from datasets import available_datasets
 from my_parser import parser
-from model import CellGeneModel, vGraphEM
+from model import CellGeneModel, vGraphEM, LINE
 
 sc.settings.set_figure_params(
     dpi=120, dpi_save=300, facecolor='white', fontsize=10, figsize=(10, 10))
@@ -28,9 +28,9 @@ def train(model, adata: anndata.AnnData, args,
           device=torch.device(
               "cuda:0" if torch.cuda.is_available() else "cpu")):
     # set up initial learning rate and optimizer
-    lr = args.lr
+    lr = args.lr * (args.lr_decay ** (args.restore_step / args.log_every))
     optimizer = optim.Adam(model.parameters(), lr=lr)
-    gumbel_tau = args.gumbel_max
+    gumbel_tau = max(args.gumbel_min, args.gumbel_max * (np.exp(-args.gumbel_anneal) ** args.restore_step))
 
     # Samplers
     if args.alias_sampling:
@@ -85,6 +85,7 @@ def train(model, adata: anndata.AnnData, args,
         ('n_genes', adata.n_vars),
         ('n_edges', adata.X.sum()),
         ('n_labels', adata.obs.cell_types.nunique()),
+        ('n_batches', adata.obs.batch_indices.nunique()),
         ('ckpt_dir', train_instance_name),
         ('true_label_dist', ', '.join(
             [f'{name}: {count}' for name, count in
@@ -136,9 +137,9 @@ def train(model, adata: anndata.AnnData, args,
                 optimizer.step()
 
                 # log tracked items
-                tracked_items['loss'].append(loss.item())
+                tracked_items['loss'].append(loss.detach().item())
                 for key, val in other_tracked_items.items():
-                    tracked_items[key].append(val.item())
+                    tracked_items[key].append(val.detach().item())
 
             step += 1
             gumbel_tau = np.maximum(
@@ -148,7 +149,7 @@ def train(model, adata: anndata.AnnData, args,
             # eval
             if step >= next_checkpoint or step == args.updates:
                 model.eval()
-                cell_types = model.get_cell_type(cell_gene_sampler)
+                cell_types = model.get_cell_type(cell_gene_sampler, adata, args)
                 next_checkpoint += args.log_every
 
                 # display log and save embedding visualization
@@ -219,7 +220,7 @@ if __name__ == '__main__':
     if not args.eval_batches:
         args.eval_batches = int(np.round(3000000 / args.batch_size))
 
-    model_dict = dict(vGraph=CellGeneModel, vGraphEM=vGraphEM)
+    model_dict = dict(vGraph=CellGeneModel, vGraphEM=vGraphEM, LINE=LINE)
     Model = model_dict[args.model]
     model = Model(adata, args)
     train(model, adata, args)
