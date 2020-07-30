@@ -18,7 +18,7 @@ from train_utils import get_beta, get_epsilon, get_eta, \
     get_train_instance_name, logging, get_logging_items, draw_embeddings
 from datasets import available_datasets
 from my_parser import parser
-from model import CellGeneModel, vGraphEM, LINE
+from model import CellGeneModel, vGraphEM, LINE, vGraphWithCellProfile
 
 sc.settings.set_figure_params(
     dpi=120, dpi_save=300, facecolor='white', fontsize=10, figsize=(10, 10))
@@ -28,7 +28,7 @@ def train(model, adata: anndata.AnnData, args,
           device=torch.device(
               "cuda:0" if torch.cuda.is_available() else "cpu")):
     # set up initial learning rate and optimizer
-    lr = args.lr * (args.lr_decay ** (args.restore_step / args.log_every))
+    lr = args.lr * (np.exp(-args.lr_decay) ** (args.restore_step))
     optimizer = optim.Adam(model.parameters(), lr=lr)
     gumbel_tau = max(args.gumbel_min, args.gumbel_max * (np.exp(-args.gumbel_anneal) ** args.restore_step))
 
@@ -101,14 +101,6 @@ def train(model, adata: anndata.AnnData, args,
             print('Training: Step {:7d}/{:7d}\tNext ckpt: {:7d}'.format(
                 step, args.updates, next_checkpoint), end='\r')
 
-            # construct data_dict
-            data_dict = cell_gene_sampler.pipeline.get_message()
-            if args.max_gamma:
-                g1, g2 = gene_sampler.pipeline.get_message()
-                data_dict['g1'], data_dict['g2'] = g1, g2
-            if args.max_delta:
-                c1, c2 = cell_sampler.pipeline.get_message()
-                data_dict['c1'], data_dict['c2'] = c1, c2
             # construct hyper_param_dict
             hyper_param_dict = {
                 'tau': gumbel_tau,
@@ -123,28 +115,42 @@ def train(model, adata: anndata.AnnData, args,
                 'E': args.m_step and step % args.m_step == 0
             }
 
+            # construct data_dict
+            if not args.m_step or hyper_param_dict['E']:
+                data_dict = cell_gene_sampler.pipeline.get_message()
+                if args.max_gamma:
+                    g1, g2 = gene_sampler.pipeline.get_message()
+                    data_dict['g1'], data_dict['g2'] = g1, g2
+                if args.max_delta:
+                    c1, c2 = cell_sampler.pipeline.get_message()
+                    data_dict['c1'], data_dict['c2'] = c1, c2
+
             # train for one step
             if hyper_param_dict['E']:
                 model.eval()
-                model.E_step()
-            else:
-                model.train()
-                optimizer.zero_grad()
-                fwd_dict = model(data_dict, hyper_param_dict)
-                loss, other_tracked_items = model.get_loss(
-                    fwd_dict, data_dict, hyper_param_dict)
-                loss.backward()
-                optimizer.step()
+                model.E_step(data_dict, hyper_param_dict)
 
-                # log tracked items
-                tracked_items['loss'].append(loss.detach().item())
-                for key, val in other_tracked_items.items():
-                    tracked_items[key].append(val.detach().item())
+            model.train()
+            optimizer.zero_grad()
+            fwd_dict = model(data_dict, hyper_param_dict)
+            loss, other_tracked_items = model.get_loss(
+                fwd_dict, data_dict, hyper_param_dict)
+            loss.backward()
+            optimizer.step()
+
+            # log tracked items
+            tracked_items['loss'].append(loss.detach().item())
+            for key, val in other_tracked_items.items():
+                tracked_items[key].append(val.detach().item())
 
             step += 1
             gumbel_tau = np.maximum(
                 gumbel_tau * np.exp(-args.gumbel_anneal),
                 args.gumbel_min)
+            if args.lr_decay:
+                lr = lr * np.exp(-args.lr_decay)
+                for param_group in optimizer.param_groups:
+                    param_group['lr'] = lr
 
             # eval
             if step >= next_checkpoint or step == args.updates:
@@ -153,13 +159,14 @@ def train(model, adata: anndata.AnnData, args,
                 next_checkpoint += args.log_every
 
                 # display log and save embedding visualization
+                embeddings = model.get_cell_emb_weights().items()
                 items = get_logging_items(
-                    step, lr, hyper_param_dict['tau'], args, adata,
+                    embeddings, step, lr, hyper_param_dict['tau'], args, adata,
                     tracked_items, tracked_metric, cell_types)
                 logging(items, ckpt_dir)
                 draw_embeddings(
                     adata=adata, step=step, args=args, cell_types=cell_types,
-                    embeddings=model.get_cell_emb_weights().items(),
+                    embeddings=embeddings,
                     train_instance_name=train_instance_name, ckpt_dir=ckpt_dir)
 
                 # checkpointing
@@ -168,11 +175,6 @@ def train(model, adata: anndata.AnnData, args,
                 torch.save(optimizer.state_dict(),
                            os.path.join(ckpt_dir, 'opt-%d' % step))
 
-                # lr decay
-                if args.lr_decay:
-                    lr = lr * args.lr_decay
-                    for param_group in optimizer.param_groups:
-                        param_group['lr'] = lr
         print("Optimization Finished: %s" % ckpt_dir)
     except:
         import traceback
@@ -214,13 +216,34 @@ def train(model, adata: anndata.AnnData, args,
 
 if __name__ == '__main__':
     args = parser.parse_args()
-    adata = available_datasets[args.dataset_str].get_dataset(args)
+    if args.dataset_path:
+        import pickle
+        with open(args.dataset_path, 'rb') as f:
+            df = pickle.load(f)
+        annotations = ['batch_id', 'cell_id', 'cell_type']
+        if 'barcode' in df.columns:
+            annotations.append('barcode')
+        # change column names
+        df_anno = df[annotations]
+        col = list(df_anno.columns)
+        col[col.index('cell_type')] = 'cell_types'
+        col[col.index('batch_id')] = 'batch_indices'
+        df_anno.columns = col
+
+        df.drop(annotations, axis=1, inplace=True)
+        adata = anndata.AnnData(X=df.values, obs=df_anno)
+        adata.obs_names_make_unique()
+        args.dataset_str = Path(args.dataset_path).name.split('.')[0]
+        if adata.obs.batch_indices.nunique() < 100:
+            adata.obs.batch_indices = adata.obs.batch_indices.astype('str').astype('category')
+    else:
+        adata = available_datasets[args.dataset_str].get_dataset(args)
     if not args.n_labels:
         args.n_labels = adata.obs.cell_types.nunique()
     if not args.eval_batches:
         args.eval_batches = int(np.round(3000000 / args.batch_size))
 
-    model_dict = dict(vGraph=CellGeneModel, vGraphEM=vGraphEM, LINE=LINE)
+    model_dict = dict(vGraph=CellGeneModel, vGraphEM=vGraphEM, LINE=LINE, vGraphWithCellProfile=vGraphWithCellProfile)
     Model = model_dict[args.model]
     model = Model(adata, args)
     train(model, adata, args)

@@ -94,7 +94,7 @@ class EdgeSampler(threading.Thread):
                 cells = torch.LongTensor(cells).to(self.device)
                 genes = torch.LongTensor(genes).to(self.device)
                 self.pipeline.set_message((cells, genes))
-
+ 
 
 class NonZeroEdgeSampler(threading.Thread):
     def __init__(self, adata: anndata.AnnData, args, device=torch.device('cuda:0' if torch.cuda.is_available() else "cpu"),
@@ -177,9 +177,9 @@ class VAEdgeSampler(threading.Thread):
         self.device = device
         self.n_epochs = n_epochs
         self.pipeline = Pipeline()
-        self.max_lambda = args.max_lambda
-        if self.max_lambda:
-            self.batch_indices = adata.obs.batch_indices.values
+        self.sample_batches = args.max_lambda or args.cell_batch_scaling
+        if self.sample_batches:
+            self.batch_indices = torch.LongTensor(adata.obs.batch_indices.astype(int).values).to(device)
 
     def run(self):
         count = 0
@@ -204,7 +204,7 @@ class VAEdgeSampler(threading.Thread):
             neg_genes_tensor = torch.LongTensor(neg_genes).to(self.device)
             result_dict = dict(cells=cells_tensor,
                                genes=genes_tensor, neg_genes=neg_genes_tensor)
-            if self.max_lambda:
+            if self.sample_batches:
                 result_dict['batch_indices'] = self.batch_indices[cells]
             self.pipeline.set_message(result_dict)
 

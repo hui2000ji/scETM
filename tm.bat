@@ -1,0 +1,1 @@
+python train.py --log-every 80000 --updates 4000000 --lr 0.1 --lr-decay 0.92 --dataset-str TM --batch-size 60000 --linear-anneal 80000 --gumbel-anneal 3e-7

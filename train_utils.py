@@ -1,13 +1,15 @@
 import time
 import os
 
+import pandas as pd
+import scipy
 import matplotlib.pyplot as plt 
 import anndata
 import numpy as np
 import scanpy as sc
 from sklearn.metrics import adjusted_rand_score, adjusted_mutual_info_score, \
     normalized_mutual_info_score
-
+from sklearn.neighbors import NearestNeighbors
 
 def get_train_instance_name(args, adata: anndata.AnnData):
     strs = [
@@ -66,7 +68,7 @@ def logging(logging_items, ckpt_dir, time_str=None):
         str = str + ' ' + time_str
     with open(os.path.join(ckpt_dir, 'log.txt'), 'a+') as f:
         f.write(str + '\n')
-    print(str)
+    print(str, flush=True)
     return str
 
 
@@ -100,8 +102,9 @@ def get_epsilon(args, step):
     return epsilon
 
 
-def get_logging_items(step, lr, gumbel_tau, args, adata,
+def get_logging_items(embeddings, step, lr, gumbel_tau, args, adata,
                       tracked_items, tracked_metric, cell_types):
+    print('Evaluating and logging...', flush=True, end='\r')
     items = [('step', '%7d' % step), ('gumbel', '%6.4f' % gumbel_tau)]
     if args.lr_decay < 1.:
         items.append(('lr', '%7.2e' % lr))
@@ -114,20 +117,24 @@ def get_logging_items(step, lr, gumbel_tau, args, adata,
             tracked_metric['%c_lbl' % prefix][step] = \
                 [(cell_type == label).sum() for label in np.unique(cell_type)]
             tracked_metric['%c_nmi' % prefix][step] = \
-                normalized_mutual_info_score(cell_type, adata.obs.cell_types)
+                normalized_mutual_info_score(adata.obs.cell_types, cell_type)
             tracked_metric['%c_ari' % prefix][step] = \
-                adjusted_rand_score(cell_type, adata.obs.cell_types)
+                adjusted_rand_score(adata.obs.cell_types, cell_type)
             tracked_metric['%c_ami' % prefix][step] = \
-                adjusted_mutual_info_score(cell_type, adata.obs.cell_types)
+                adjusted_mutual_info_score(adata.obs.cell_types, cell_type)
             items.extend([
                 ('%c_lbl' % prefix, str(
                     tracked_metric['%c_lbl' % prefix][step])),
                 ('%c_nmi' % prefix, '%7.4f' %
-                 tracked_metric['%c_nmi' % prefix][step]),
+                    tracked_metric['%c_nmi' % prefix][step]),
                 ('%c_ari' % prefix, '%7.4f' %
-                 tracked_metric['%c_ari' % prefix][step]),
+                    tracked_metric['%c_ari' % prefix][step]),
                 ('%c_ami' % prefix, '%7.4f' %
-                 tracked_metric['%c_ami' % prefix][step])])
+                    tracked_metric['%c_ami' % prefix][step]),
+            ])
+            if adata.obs.batch_indices.nunique() > 1:
+                items.append((f'{prefix}_bARI', '%7.4f' %
+                    adjusted_rand_score(adata.obs.batch_indices, cell_type)))
         elif cell_type_key.endswith('gene_type'):
             prefix = cell_type_key[0]
             gene_type = cell_types[cell_type_key]
@@ -135,6 +142,11 @@ def get_logging_items(step, lr, gumbel_tau, args, adata,
                 [(gene_type == i).sum() for i in range(args.n_labels)])))
         else:
             raise ValueError('Invalid cell type key ' + cell_type_key)
+    if adata.obs.batch_indices.nunique() > 1:
+        for name, latent_space in embeddings:
+            items.append((f'{name}_BE', '%7.4f' % 
+                entropy_batch_mixing(latent_space, adata.obs.batch_indices)))
+    # clear tracked_items    
     for key in tracked_items:
         tracked_items[key] = list()
     return items
@@ -143,6 +155,7 @@ def get_logging_items(step, lr, gumbel_tau, args, adata,
 def draw_embeddings(adata: anndata.AnnData, step: int, args, cell_types: dict,
                     embeddings: dict, train_instance_name: str, ckpt_dir: str,
                     save: bool = True, show: bool = False):
+    print('Drawing embeddings...', flush=True, end='\r')
     cell_type_keys = []
     for cell_type_key in cell_types:
         if cell_type_key.endswith('cell_type'):
@@ -180,3 +193,34 @@ def _start_shell(local_ns):
         user_ns.update(local_ns)
     user_ns.update(globals())
     IPython.start_ipython(argv=[], user_ns=user_ns)
+
+
+def entropy_batch_mixing(latent_space, batches, n_neighbors=50, n_pools=50, n_samples_per_pool=100):
+    # code adapted from scGAN
+    print('Calculating batch mixing entropy...', end='\r', flush=True)
+    def entropy(hist_data):
+        counts = pd.Series(hist_data).value_counts()
+        freqs = counts / counts.sum()
+        return (-freqs * np.log(freqs + 1e-20)).sum()
+
+    n_neighbors = min(n_neighbors, len(latent_space) - 1)
+    nne = NearestNeighbors(n_neighbors=1 + n_neighbors, n_jobs=8)
+    nne.fit(latent_space)
+    kmatrix = nne.kneighbors_graph(
+        latent_space) - scipy.sparse.identity(latent_space.shape[0])
+
+    score = 0.
+    for t in range(n_pools):
+        indices = np.random.choice(
+            np.arange(latent_space.shape[0]), size=n_samples_per_pool)
+        score += np.mean(
+            [
+                entropy(
+                    batches[
+                        kmatrix[indices[i]].nonzero()[1]
+                    ]
+                )
+                for i in range(n_samples_per_pool)
+            ]
+        )
+    return score / n_pools
