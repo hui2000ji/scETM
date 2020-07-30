@@ -8,13 +8,20 @@ from data_utils import VoseAlias
 
 
 class CellSampler(threading.Thread):
-    def __init__(self, n_cells, batch_size, device, n_epochs=np.inf):
+    def __init__(self, adata: anndata.AnnData, args, device=torch.device('cuda:0' if torch.cuda.is_available() else "cpu"),
+                 n_epochs=np.inf):
         super().__init__(daemon=True)
-        self.n_cells = n_cells
-        self.batch_size = batch_size
+        self.n_cells = adata.n_obs
+        self.batch_size = args.batch_size
         self.device = device
         self.n_epochs = n_epochs
+        self.library_size = adata.X.sum(1, keepdims=True)
+        self.X = adata.X
+        self.sample_batches = args.max_lambda or args.cell_batch_scaling
+
         self.pipeline = Pipeline()
+        if self.sample_batches:
+            self.batch_indices = adata.obs.batch_indices.astype(int).values
 
     def run(self):
         if self.batch_size < self.n_cells:
@@ -24,76 +31,40 @@ class CellSampler(threading.Thread):
 
     def _high_batch_size(self):
         count = 0
-        cells = np.arange(self.n_cells)
+        X = torch.FloatTensor(self.X).to(self.device)
+        library_size = torch.FloatTensor(self.library_size).to(self.device)
+        cell_indices = torch.arange(0, self.n_cells, dtype=torch.long, device=self.device)
+        result_dict = dict(cells=X, library_size=library_size, cell_indices=cell_indices)
+        if self.sample_batches:
+            result_dict['batch_indices'] = torch.LongTensor(self.batch_indices).to(self.device)
         while count < self.n_epochs:
             count += 1
-            batch = torch.LongTensor(cells).to(self.device)
-            self.pipeline.set_message(batch)
+            self.pipeline.set_message(result_dict)
 
     def _low_batch_size(self):
         entry_index = 0
         count = 0
-        cells = np.arange(self.n_cells)
-        np.random.shuffle(cells)
+        cell_range = np.arange(self.n_cells)
+        np.random.shuffle(cell_range)
         while count < self.n_epochs:
-            count += 1
             if entry_index + self.batch_size >= self.n_cells:
-                batch = cells[entry_index:]
-                np.random.shuffle(cells)
+                count += 1
+                batch = cell_range[entry_index:]
+                np.random.shuffle(cell_range)
                 excess = entry_index + self.batch_size - self.n_cells
-                if excess > 0:
-                    batch = np.append(batch, cells[:excess], axis=0)
+                if excess > 0 and count < self.n_epochs:
+                    batch = np.append(batch, cell_range[:excess], axis=0)
                 entry_index = excess
             else:
-                batch = cells[entry_index: entry_index + self.batch_size]
+                batch = cell_range[entry_index: entry_index + self.batch_size]
                 entry_index += self.batch_size
-            batch = torch.LongTensor(batch).to(self.device)
-            self.pipeline.set_message(batch)
-
-
-class EdgeSampler(threading.Thread):
-    def __init__(self, edges, batch_size, row_size, device, n_epochs=np.inf, n_neg_samples=0, gene_prob=None):
-        super().__init__(daemon=True)
-        self.edge_probs = edges / edges.sum()
-        self.edges_range = np.arange(edges.size)
-        self.batch_size = batch_size
-        self.n_neg_samples = n_neg_samples
-        self.row_size = row_size
-        self.device = device
-        self.n_epochs = n_epochs
-        self.pipeline = Pipeline()
-
-        if self.n_neg_samples:
-            assert gene_prob is not None
-            self.gene_prob = gene_prob
-
-    def run(self):
-        count = 0
-        while count < self.n_epochs:
-            count += 1
-            shuffled_edges = np.random.choice(
-                self.edges_range, size=self.batch_size, p=self.edge_probs)
-            batch = np.array([(choice // self.row_size, choice % self.row_size)
-                              for choice in shuffled_edges], dtype=np.int32)
-            cells, genes = batch[:, 0], batch[:, 1]
-            if self.n_neg_samples:
-                neg_genes = np.random.choice(np.arange(self.row_size), size=(
-                    self.batch_size, self.n_neg_samples), p=self.gene_prob)
-                same_genes = genes[:, np.newaxis] == neg_genes
-                num_same_genes = same_genes.sum()
-                while num_same_genes > 0:
-                    neg_genes[same_genes] = np.random.choice(
-                        np.arange(self.row_size), size=(num_same_genes,), p=self.gene_prob)
-                    same_genes = genes[:, np.newaxis] == neg_genes
-                    num_same_genes = same_genes.sum()
-                neg_genes = torch.LongTensor(neg_genes).to(self.device)
-                cells = torch.LongTensor(cells).to(self.device)
-                genes = torch.LongTensor(genes).to(self.device)
-                self.pipeline.set_message((cells, genes, neg_genes))
-            else:
-                cells = torch.LongTensor(cells).to(self.device)
-                genes = torch.LongTensor(genes).to(self.device)
-                self.pipeline.set_message((cells, genes))
+            library_size = torch.FloatTensor(self.library_size[batch]).to(self.device)
+            cells = torch.FloatTensor(self.X[batch]).to(self.device)
+            cell_indices = torch.LongTensor(batch).to(self.device)
+            result_dict = dict(cells=cells, library_size=library_size, cell_indices=cell_indices)
+            if self.sample_batches:
+                result_dict['batch_indices'] = torch.LongTensor(self.batch_indices[batch]).to(self.device)
+            self.pipeline.set_message(result_dict)
  
 
 class NonZeroEdgeSampler(threading.Thread):

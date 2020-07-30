@@ -14,8 +14,7 @@ from sklearn.neighbors import NearestNeighbors
 def get_train_instance_name(args, adata: anndata.AnnData):
     strs = [
         args.dataset_str,
-        args.model + args.emb_combine
-        if args.model.startswith('vGraph') else args.model]
+        args.model]
     for tuple_ in (
             ('genes', args.subsample_genes, adata.n_vars),
             ('nLabels', args.n_labels, adata.obs.cell_types.nunique()),
@@ -29,7 +28,7 @@ def get_train_instance_name(args, adata: anndata.AnnData):
             ('zeta', args.max_zeta),
             ('eta', args.max_eta),
             ('cycBeta', args.cyclic_anneal),
-            ('linBeta', args.linear_anneal, 1200),
+            ('linBeta', args.linear_anneal, 2400),
             ('linEpsilon', args.linear_anneal_epsilon),
             ('linEta', args.linear_anneal_eta),
             ('cLoss', args.g2c_factor, 1.),
@@ -48,8 +47,6 @@ def get_train_instance_name(args, adata: anndata.AnnData):
             ('qn', args.quantile_norm),
             ('log1p', args.log1p),
             ('normRdCnt', args.norm_cell_read_counts),
-            ('decpPQ', args.decouple_pq),
-            ('aliasSpl', args.alias_sampling),
             (args.log_str, args.log_str)
     ):
         if bool_:
@@ -178,7 +175,8 @@ def draw_embeddings(adata: anndata.AnnData, step: int, args, cell_types: dict,
         if save:
             fig.savefig(
                 os.path.join(
-                    ckpt_dir, f'{train_instance_name}_{emb_name}_step{step}.jpg'),
+                    # ckpt_dir, f'{train_instance_name}_{emb_name}_step{step}.jpg'),
+                    ckpt_dir, f'{emb_name}_step{step}.jpg'),
                 dpi=300, bbox_inches='tight'
             )
         fig.clf()

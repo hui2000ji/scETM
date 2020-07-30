@@ -65,7 +65,8 @@ class VoseAlias(object):
         """
         self.keys = keys
         self.weights = weights
-        self.table_prob = np.zeros_like(self.weights, dtype=np.float64)  # probability table
+        self.n = len(self.weights)
+        self.table_prob = (self.weights * self.n).astype(np.float64)  # scaled probabilities
         self.list_prob = None
         self.table_alias = np.zeros_like(self.weights, dtype=np.int64)  # alias table
         self.alias_init()
@@ -74,47 +75,32 @@ class VoseAlias(object):
         """
         Construct probability and alias tables for the distribution.
         """
-        # Initialise variables
-        n = len(self.weights)
-
         # Construct and sort the scaled probabilities into their appropriate stacks
-        print("1/2. Building and sorting scaled probabilities for alias table...")
-        scaled_prob = (self.weights * n).astype(np.float64)  # scaled probabilities
-        small_mask = scaled_prob < 1.
-        small = small_mask.nonzero()[0].tolist()  # stack for probabilities smaller that 1
-        large = (~small_mask).nonzero()[0].tolist()  # stack for probabilities greater than or equal to 1
+        index = np.arange(self.n)
+        small_mask = self.table_prob < 1.
+        small_index = index[small_mask]
+        large_index = index[~small_mask]
+        while small_index.size and large_index.size:
+            count = min(small_index.size, large_index.size)
+            small, small_index = np.split(small_index, (count,))
+            large, large_index = np.split(large_index, (count,))
 
-        print("2/2. Building alias table...")
-        # Construct the probability and alias tables
-        while small and large:
-            s = small.pop()
-            l = large.pop()
+            self.table_alias[small] = large
+            self.table_prob[large] += self.table_prob[small] - 1
 
-            self.table_prob[s] = scaled_prob[s]
-            self.table_alias[s] = l
-
-            scaled_prob[l] = (scaled_prob[l] + scaled_prob[s]) - 1.  # Decimal(1)
-
-            if scaled_prob[l] < 1.:
-                small.append(l)
-            else:
-                large.append(l)
-
-        # The remaining outcomes (of one stack) must have probability 1
-        while large:
-            self.table_prob[large.pop()] = 1.  # Decimal(1)
-
-        while small:
-            self.table_prob[small.pop()] = 1.  # Decimal(1)
-
-        self.list_prob = np.arange(n, dtype=np.int64)
+            small_mask = self.table_prob[large] < 1.
+            small_index = np.concatenate((small_index, large[small_mask]))
+            large_index = np.concatenate((large_index, large[~small_mask]))
+        
+        self.table_alias[small_index] = small_index
+        self.table_alias[large_index] = large_index
 
     def alias_generation(self):
         """
         Yields a random outcome from the distribution.
         """
         # Determine which column of table_prob to inspect
-        col = random.choice(self.list_prob)
+        col = random.randint(self.n)
         # Determine which outcome to pick in that column
         if self.table_prob[col] >= random.uniform(0, 1):
             return col
@@ -125,7 +111,7 @@ class VoseAlias(object):
         """
         Yields a sample of size n from the distribution, and print the results to stdout.
         """
-        col = rng.choice(self.list_prob, size=size)
+        col = rng.integers(0, self.n, size=size)
         ref = rng.uniform(0., 1., size=size)
         mask_less_than_ref = self.table_prob[col] < ref
         col[mask_less_than_ref] = self.table_alias[col][mask_less_than_ref]
@@ -204,19 +190,16 @@ def export_sparse(path, mat, cells=None, genes=None, first_row=False):
 if __name__ == '__main__':
     import pickle
 
-    dataset = scvi.dataset.CortexDataset('../data/cortex')
-    export_sparse('../data/cortex/cortex_c2g.txt', dataset.X, dataset.nb_cells, dataset.nb_genes)
-    d = dict(
-        gene_names=dataset.gene_names,
-        labels=dataset.labels,
-        label_to_cell_type=dataset.cell_types
-    )
-    with open('../data/cortex/anno.pickle', 'wb') as f:
-        pickle.dump(d, f)
+    # dataset = scvi.dataset.CortexDataset('../data/cortex')
+    # export_sparse('../data/cortex/cortex_c2g.txt', dataset.X, dataset.nb_cells, dataset.nb_genes)
+    # d = dict(
+    #     gene_names=dataset.gene_names,
+    #     labels=dataset.labels,
+    #     label_to_cell_type=dataset.cell_types
+    # )
+    # with open('../data/cortex/anno.pickle', 'wb') as f:
+    #     pickle.dump(d, f)
 
-    # edges, edge_weights, gene_degrees, n_cells, n_genes, X = make_distribution('../data/cortex/cortex_c2g.txt', 0.75)
-    # edge_sampler = VoseAlias(edges, edge_weights)
-    # node_sampler = VoseAlias(np.arange(n_genes, dtype=np.int32), gene_degrees)
-    # sampled_edges = edge_sampler.sample_n(10)
-    # cells, genes, neg_genes = sample_batch(sampled_edges, 5, node_sampler)
-    # print(cells, genes, neg_genes, sep='\n\n')
+    edge_sampler = VoseAlias(np.arange(5),  np.array([0.1, 0.2, 0.3, 0.25, 0.15]))
+    sampled_edges = edge_sampler.sample_n(10000, np.random.default_rng())
+    print([(sampled_edges == i).mean() for i in range(5)])

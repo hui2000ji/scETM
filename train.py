@@ -12,13 +12,13 @@ import scanpy as sc
 import torch
 from torch import optim
 
-from edgesampler import NonZeroEdgeSampler, EdgeSampler, VAEdgeSampler, \
-    VAEdgeSamplerPool
+from edgesampler import NonZeroEdgeSampler, VAEdgeSampler, \
+    VAEdgeSamplerPool, CellSampler
 from train_utils import get_beta, get_epsilon, get_eta, \
     get_train_instance_name, logging, get_logging_items, draw_embeddings
 from datasets import available_datasets
 from my_parser import parser
-from model import CellGeneModel, vGraphEM, LINE, vGraphWithCellProfile
+from model import *
 
 sc.settings.set_figure_params(
     dpi=120, dpi_save=300, facecolor='white', fontsize=10, figsize=(10, 10))
@@ -33,7 +33,9 @@ def train(model, adata: anndata.AnnData, args,
     gumbel_tau = max(args.gumbel_min, args.gumbel_max * (np.exp(-args.gumbel_anneal) ** args.restore_step))
 
     # Samplers
-    if args.alias_sampling:
+    if args.cell_sampling:
+        cell_gene_sampler = CellSampler(adata, args)
+    elif not args.no_alias_sampling:
         if args.n_samplers == 1:
             cell_gene_sampler = VAEdgeSampler(adata, args)
         elif args.n_samplers > 1:
@@ -74,8 +76,8 @@ def train(model, adata: anndata.AnnData, args,
     # logging
     if not os.path.exists(ckpt_dir):
         os.makedirs(ckpt_dir)
-    for file in glob('*.py'):
-        shutil.copy(file, os.path.join(ckpt_dir, file))
+        for file in glob('*.py'):
+            shutil.copy(file, os.path.join(ckpt_dir, file))
     logging([
         ('ds', args.dataset_str),
         ('bs', args.batch_size),
@@ -126,10 +128,6 @@ def train(model, adata: anndata.AnnData, args,
                     data_dict['c1'], data_dict['c2'] = c1, c2
 
             # train for one step
-            if hyper_param_dict['E']:
-                model.eval()
-                model.E_step(data_dict, hyper_param_dict)
-
             model.train()
             optimizer.zero_grad()
             fwd_dict = model(data_dict, hyper_param_dict)
@@ -233,6 +231,8 @@ if __name__ == '__main__':
         df.drop(annotations, axis=1, inplace=True)
         adata = anndata.AnnData(X=df.values, obs=df_anno)
         adata.obs_names_make_unique()
+        if args.log1p:
+            sc.pp.log1p(adata)
         args.dataset_str = Path(args.dataset_path).name.split('.')[0]
         if adata.obs.batch_indices.nunique() < 100:
             adata.obs.batch_indices = adata.obs.batch_indices.astype('str').astype('category')
@@ -243,7 +243,7 @@ if __name__ == '__main__':
     if not args.eval_batches:
         args.eval_batches = int(np.round(3000000 / args.batch_size))
 
-    model_dict = dict(vGraph=CellGeneModel, vGraphEM=vGraphEM, LINE=LINE, vGraphWithCellProfile=vGraphWithCellProfile)
+    model_dict = dict(vGraph=CellGeneModel, vGraphEM=vGraphEM, LINE=LINE, vGraphWithCellProfile=vGraphWithCellProfile, vGraphEMCell=vGraphEMCell, scETM=scETM, NewModel=NewModel)
     Model = model_dict[args.model]
     model = Model(adata, args)
     train(model, adata, args)
