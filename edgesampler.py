@@ -16,7 +16,7 @@ class CellSampler(threading.Thread):
         self.device = device
         self.n_epochs = n_epochs
         self.library_size = adata.X.sum(1, keepdims=True)
-        self.X = adata.X
+        self.X = (adata.X / self.library_size) if args.norm_cells else adata.X
         self.sample_batches = args.max_lambda or args.cell_batch_scaling
 
         self.pipeline = Pipeline()

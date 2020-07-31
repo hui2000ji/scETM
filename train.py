@@ -134,6 +134,8 @@ def train(model, adata: anndata.AnnData, args,
             loss, other_tracked_items = model.get_loss(
                 fwd_dict, data_dict, hyper_param_dict)
             loss.backward()
+            norms = torch.nn.utils.clip_grad_norm_(model.parameters(), 500)
+            other_tracked_items['max_norm'] = norms.max()
             optimizer.step()
 
             # log tracked items

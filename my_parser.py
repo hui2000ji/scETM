@@ -60,6 +60,7 @@ parser.add_argument('--leiden-resolution', type=float, default=0.3, help='resolu
 parser.add_argument('--fix-resolution', action='store_true', help='fix leiden and louvain resolution')
 parser.add_argument('--no-alias-sampling', action='store_false', help='disable Vose Alias Sampling')
 parser.add_argument('--cell-sampling', action='store_true', help='enable cell Sampling')
+parser.add_argument('--norm-cells', action='store_true', help='normalize cell samples')
 parser.add_argument('--m-step', type=int, default=0, help='Number of batches for M-step')
 parser.add_argument('--encoder-depth', type=int, default=1, help='depth of the encoder')
 parser.add_argument('--decoder-depth', type=int, default=1, help='depth of the decoder')
