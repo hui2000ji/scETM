@@ -878,7 +878,7 @@ class scETM(nn.Module):
             recon_logit += self.cell_bias[data_dict['cell_indices']] * self.gene_bias[data_dict['batch_indices']]
         # recon_logit = torch.mm(theta, F.softmax(self.beta, dim=-1))
         fwd_dict = dict(
-            nll=(-F.log_softmax(recon_logit, dim=-1) * ((cells) if self.norm_cells else cells)).sum(-1).mean(),
+            nll=(-F.log_softmax(recon_logit, dim=-1) * ((cells * library_size) if self.norm_cells else cells)).sum(-1).mean(),
             # nll=(-recon_logit.log() * cells).sum(-1).mean(),
             kl=(q_delta.log_prob(delta) - p_delta.log_prob(delta)).mean(),
             theta=theta
@@ -946,11 +946,11 @@ class NewModel(nn.Module):
         self.q_delta = nn.Sequential(
             nn.Linear(self.n_genes + ((self.n_batches - 1) if self.batch_removal else 0), self.emb_dim * 2),
             nn.ReLU(),
-            nn.BatchNorm1d(self.emb_dim * 2),
+            #nn.BatchNorm1d(self.emb_dim * 2),
             nn.Dropout(0.1),
             nn.Linear(self.emb_dim * 2, self.emb_dim),
             nn.ReLU(),
-            nn.BatchNorm1d(self.emb_dim),
+            #nn.BatchNorm1d(self.emb_dim),
             nn.Dropout(0.1)
         ).to(device)
         self.mu_q_delta = nn.Linear(self.emb_dim, self.n_topics, bias=True).to(device)
@@ -1036,12 +1036,12 @@ class NewModel(nn.Module):
         theta = F.softmax(delta, dim=-1)  # [batch_size, n_topics]
 
         # [n_genes, n_topics]
-        log_beta = F.log_softmax(self.beta, dim=0)
+        log_beta = F.log_softmax(self.beta, dim=0) # TODO: embedding
         # [batch_size, 1, n_topics]
         log_theta = F.log_softmax(delta, dim=-1).unsqueeze(1)
         # [batch_size, n_genes, n_topics]
         log_pz_d = log_theta
-        log_px_z = log_beta.unsqueeze(0) * ((cells * library_size) if self.norm_cells else cells).unsqueeze(2)
+        log_px_z = log_beta.unsqueeze(0) * ((cells * library_size / library_size.mean()) if self.norm_cells else cells).unsqueeze(2) # TODO: softmax
         log_pzx_d = log_pz_d + log_px_z
         if hyper_param_dict['E']:
             pz_dx = F.softmax(log_pzx_d, dim=-1)
