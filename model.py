@@ -776,7 +776,7 @@ class scETM(nn.Module):
         self.batch_indices = adata.obs.batch_indices.astype(int)
  
         self.q_delta = nn.Sequential(
-            nn.Linear(self.n_genes + ((self.n_batches - 1) if self.batch_removal else 0), self.emb_dim * 2),
+            nn.Linear(self.n_genes, self.emb_dim * 2),
             nn.ReLU(),
             nn.BatchNorm1d(self.emb_dim * 2),
             nn.Dropout(0.1),
@@ -827,7 +827,7 @@ class scETM(nn.Module):
 
     def get_cell_emb_weights(self):
         if self.n_cells > self.batch_size:
-            w_embs = []
+            thetas, deltas = [], []
             for start in range(0, self.n_cells, self.batch_size):
                 cells = torch.FloatTensor(self.X[start: start + self.batch_size]).to(self.device)
                 library_size = torch.FloatTensor(self.library_size[start: start + self.batch_size]).to(self.device)
@@ -836,8 +836,11 @@ class scETM(nn.Module):
                 if self.batch_removal or self.cell_batch_scaling:
                     batch_indices = torch.LongTensor(self.batch_indices[start: start + self.batch_size]).to(self.device)
                     data_dict['batch_indices'] = batch_indices
-                w_embs.append(self(data_dict)['theta'].detach().cpu())
-            w_emb = torch.cat(w_embs, dim=0).numpy()
+                fwd_dict = self(data_dict)
+                thetas.append(fwd_dict['theta'].detach().cpu())
+                deltas.append(fwd_dict['delta'].detach().cpu())
+            theta = torch.cat(thetas, dim=0).numpy()
+            delta = torch.cat(deltas, dim=0).numpy()
         else:
             cells = torch.FloatTensor(self.X).to(self.device)
             library_size = torch.FloatTensor(self.library_size).to(self.device)
@@ -845,18 +848,16 @@ class scETM(nn.Module):
             if self.batch_removal or self.cell_batch_scaling:
                 batch_indices = torch.LongTensor(self.batch_indices).to(self.device)
                 data_dict['batch_indices'] = batch_indices
-            w_emb = self(data_dict)['theta'].detach().cpu().numpy()
-        return {'w_cell_emb': w_emb}
+            fwd_dict = self(data_dict)
+            theta = fwd_dict['theta'].detach().cpu().numpy()
+            delta = fwd_dict['delta'].detach().cpu().numpy()
+        return {'theta': theta, 'delta': delta}
 
     def forward(self, data_dict, hyper_param_dict=dict(E=True)):
         cells, library_size = data_dict['cells'], data_dict['library_size']
         batch_size = cells.shape[0]
         
-        if self.batch_removal:
-            batch_indices_oh = self._get_batch_indices_oh(data_dict)
-            q_delta = self.q_delta(torch.cat((cells, batch_indices_oh), dim=1))
-        else:
-            q_delta = self.q_delta(cells)
+        q_delta = self.q_delta(cells)
         mu_q_delta = self.mu_q_delta(q_delta)
         logsigma_q_delta = self.logsigma_q_delta(q_delta).clamp_(self.min_logsigma, self.max_logsigma)
         p_delta = Independent(Normal(
@@ -871,7 +872,7 @@ class scETM(nn.Module):
         theta = F.softmax(delta, dim=-1)  # [batch_size, n_topics]
 
         if self.batch_removal:
-            recon_logit = self.beta(torch.cat((theta, batch_indices_oh), dim=1))
+            recon_logit = self.beta(torch.cat((theta, self._get_batch_indices_oh(data_dict)), dim=1))
         else:
             recon_logit = self.beta(theta)  # [batch_size, n_genes]
         if self.cell_batch_scaling:
@@ -881,20 +882,20 @@ class scETM(nn.Module):
             nll=(-F.log_softmax(recon_logit, dim=-1) * ((cells * library_size) if self.norm_cells else cells)).sum(-1).mean(),
             # nll=(-recon_logit.log() * cells).sum(-1).mean(),
             kl=(q_delta.log_prob(delta) - p_delta.log_prob(delta)).mean(),
-            theta=theta
+            theta=theta,
+            delta=delta
         )
         return fwd_dict
 
     def get_cell_type(self, cell_gene_sampler, adata=None, args=None, hard_accum=False):
         self.eval()
-
-        theta = self.get_cell_emb_weights()['w_cell_emb']
-        p_cell_type = theta.argmax(-1)
+        weights = self.get_cell_emb_weights()
+        p_cell_type = weights['delta'].argmax(-1)
 
         result = dict(
             p_cell_type=p_cell_type,
-            ouvain_cell_type=get_louvain_type(self, adata, args),
-            leiden_cell_type=get_leiden_type(self, adata, args)
+            ouvain_cell_type=get_louvain_type(self, adata, args, use_rep='delta'),
+            leiden_cell_type=get_leiden_type(self, adata, args, use_rep='delta')
         )
         return result
 
@@ -946,18 +947,20 @@ class NewModel(nn.Module):
         self.q_delta = nn.Sequential(
             nn.Linear(self.n_genes + ((self.n_batches - 1) if self.batch_removal else 0), self.emb_dim * 2),
             nn.ReLU(),
-            #nn.BatchNorm1d(self.emb_dim * 2),
+            nn.BatchNorm1d(self.emb_dim * 2),
             nn.Dropout(0.1),
             nn.Linear(self.emb_dim * 2, self.emb_dim),
             nn.ReLU(),
-            #nn.BatchNorm1d(self.emb_dim),
+            nn.BatchNorm1d(self.emb_dim),
             nn.Dropout(0.1)
         ).to(device)
         self.mu_q_delta = nn.Linear(self.emb_dim, self.n_topics, bias=True).to(device)
         self.logsigma_q_delta = nn.Linear(self.emb_dim, self.n_topics, bias=True).to(device)
 
         # self.beta = nn.Linear(self.n_topics + ((self.n_batches - 1) if self.batch_removal else 0), self.n_genes, bias=True).to(device)
-        self.beta = nn.Parameter(torch.randn(self.n_genes, self.n_topics, device=device))
+        # self.beta = nn.Parameter(torch.randn(self.n_genes, self.n_topics, device=device))
+        self.rho = nn.Parameter(torch.randn(self.n_genes, self.emb_dim, device=device))
+        self.alpha = nn.Parameter(torch.randn(self.emb_dim, self.n_topics, device=device))
 
         ## cap log variance within [-10, 10]
         self.max_logsigma = 10
@@ -992,7 +995,7 @@ class NewModel(nn.Module):
 
     def get_cell_emb_weights(self):
         if self.n_cells > self.batch_size:
-            w_embs = []
+            thetas, deltas = [], []
             for start in range(0, self.n_cells, self.batch_size):
                 cells = torch.FloatTensor(self.X[start: start + self.batch_size]).to(self.device)
                 library_size = torch.FloatTensor(self.library_size[start: start + self.batch_size]).to(self.device)
@@ -1001,8 +1004,11 @@ class NewModel(nn.Module):
                 if self.batch_removal or self.cell_batch_scaling:
                     batch_indices = torch.LongTensor(self.batch_indices[start: start + self.batch_size]).to(self.device)
                     data_dict['batch_indices'] = batch_indices
-                w_embs.append(self(data_dict)['theta'].detach().cpu())
-            w_emb = torch.cat(w_embs, dim=0).numpy()
+                fwd_dict = self(data_dict, hyper_param_dict=dict(val=True))
+                thetas.append(fwd_dict['theta'].detach().cpu())
+                deltas.append(fwd_dict['delta'].detach().cpu())
+            theta = torch.cat(thetas, dim=0).numpy()
+            delta = torch.cat(deltas, dim=0).numpy()
         else:
             cells = torch.FloatTensor(self.X).to(self.device)
             library_size = torch.FloatTensor(self.library_size).to(self.device)
@@ -1010,8 +1016,10 @@ class NewModel(nn.Module):
             if self.batch_removal or self.cell_batch_scaling:
                 batch_indices = torch.LongTensor(self.batch_indices).to(self.device)
                 data_dict['batch_indices'] = batch_indices
-            w_emb = self(data_dict)['theta'].detach().cpu().numpy()
-        return {'w_cell_emb': w_emb}
+            fwd_dict = self(data_dict, hyper_param_dict=dict(val=True))
+            theta = fwd_dict['theta'].detach().cpu().numpy()
+            delta = fwd_dict['delta'].detach().cpu().numpy()
+        return {'theta': theta, 'delta': delta}
 
     def forward(self, data_dict, hyper_param_dict=dict(E=False)):
         cells, library_size = data_dict['cells'], data_dict['library_size']
@@ -1035,13 +1043,17 @@ class NewModel(nn.Module):
         delta = q_delta.rsample()
         theta = F.softmax(delta, dim=-1)  # [batch_size, n_topics]
 
+        if 'val' in hyper_param_dict:
+            return dict(theta=theta, delta=delta)
+
+        beta = torch.mm(self.rho, self.alpha)
         # [n_genes, n_topics]
-        log_beta = F.log_softmax(self.beta, dim=0) # TODO: embedding
+        log_beta = F.log_softmax(beta, dim=0) # TODO: embedding
         # [batch_size, 1, n_topics]
         log_theta = F.log_softmax(delta, dim=-1).unsqueeze(1)
         # [batch_size, n_genes, n_topics]
         log_pz_d = log_theta
-        log_px_z = log_beta.unsqueeze(0) * ((cells * library_size / library_size.mean()) if self.norm_cells else cells).unsqueeze(2) # TODO: softmax
+        log_px_z = log_beta.unsqueeze(0) * ((cells * library_size) if self.norm_cells else cells).unsqueeze(2) # TODO: softmax
         log_pzx_d = log_pz_d + log_px_z
         if hyper_param_dict['E']:
             pz_dx = F.softmax(log_pzx_d, dim=-1)
@@ -1052,20 +1064,20 @@ class NewModel(nn.Module):
         fwd_dict = dict(
             nll=-(pz_dx * log_pzx_d).sum(-1).sum(-1).mean(),
             kl_delta=(q_delta.log_prob(delta) - p_delta.log_prob(delta)).mean(),
-            theta=theta 
+            theta=theta,
+            delta=delta
         )
         return fwd_dict
 
     def get_cell_type(self, cell_gene_sampler, adata=None, args=None, hard_accum=False):
         self.eval()
-
-        theta = self.get_cell_emb_weights()['w_cell_emb']
-        p_cell_type = theta.argmax(-1)
+        weights = self.get_cell_emb_weights()
+        p_cell_type = weights['delta'].argmax(-1)
 
         result = dict(
             p_cell_type=p_cell_type,
-            ouvain_cell_type=get_louvain_type(self, adata, args),
-            leiden_cell_type=get_leiden_type(self, adata, args)
+            ouvain_cell_type=get_louvain_type(self, adata, args, use_rep='delta'),
+            leiden_cell_type=get_leiden_type(self, adata, args, use_rep='delta')
         )
         return result
 
@@ -1162,43 +1174,43 @@ def get_q_type(model, cell_gene_sampler, hard_accum=False, key='qz'):
     return posterior_cell_type
 
 
-def get_louvain_type(model, adata, args):
+def get_louvain_type(model, adata, args, use_rep='w_cell_emb'):
     print('Performing louvain clustering...', flush=True, end='\r')
-    adata.obsm['w_cell_emb'] = model.get_cell_emb_weights()['w_cell_emb']
+    adata.obsm[use_rep] = model.get_cell_emb_weights()[use_rep]
     for _ in range(3):
-        sc.pp.neighbors(adata, n_neighbors=args.n_neighbors, use_rep='w_cell_emb')
+        sc.pp.neighbors(adata, n_neighbors=args.n_neighbors, use_rep=use_rep)
         sc.tl.louvain(adata, resolution=args.louvain_resolution)
         if args.fix_resolution:
             break
         if adata.obs.louvain.nunique() < args.n_labels / 2:
-            args.louvain_resolution *= 2
-        elif adata.obs.louvain.nunique() < args.n_labels / 1.1:
+            args.louvain_resolution *= 1.9
+        elif adata.obs.louvain.nunique() < args.n_labels / 1.2:
             args.louvain_resolution *= 1.2
         elif adata.obs.louvain.nunique() > args.n_labels * 2:
             args.louvain_resolution /= 2
         elif adata.obs.louvain.nunique() > args.n_labels * 1.1:
-            args.louvain_resolution /= 1.2
+            args.louvain_resolution /= 1.3
         else:
             break
     return adata.obs['louvain'].astype(int)
 
 
-def get_leiden_type(model, adata, args):
+def get_leiden_type(model, adata, args, use_rep='w_cell_emb'):
     print('Performing leiden clustering...', flush=True, end='\r')
-    adata.obsm['w_cell_emb'] = model.get_cell_emb_weights()['w_cell_emb']
+    adata.obsm[use_rep] = model.get_cell_emb_weights()[use_rep]
     for _ in range(3):
-        sc.pp.neighbors(adata, n_neighbors=args.n_neighbors, use_rep='w_cell_emb')
+        sc.pp.neighbors(adata, n_neighbors=args.n_neighbors, use_rep=use_rep)
         sc.tl.leiden(adata, resolution=args.leiden_resolution)
         if args.fix_resolution:
             break
         if adata.obs.leiden.nunique() < args.n_labels / 2:
-            args.leiden_resolution *= 2
-        elif adata.obs.leiden.nunique() < args.n_labels / 1.1:
+            args.leiden_resolution *= 1.9
+        elif adata.obs.leiden.nunique() < args.n_labels / 1.2:
             args.leiden_resolution *= 1.2
         elif adata.obs.leiden.nunique() > args.n_labels * 2:
             args.leiden_resolution /= 2
         elif adata.obs.leiden.nunique() > args.n_labels * 1.1:
-            args.leiden_resolution /= 1.2
+            args.leiden_resolution /= 1.3
         else:
             break
     return adata.obs['leiden'].astype(int)

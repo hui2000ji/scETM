@@ -20,6 +20,7 @@ def get_train_instance_name(args, adata: anndata.AnnData):
             ('nLabels', args.n_labels, adata.obs.cell_types.nunique()),
             ('clip', args.clip),
             ('scale', args.scale),
+            ('lr', args.lr, 2e-2),
             ('beta', args.max_beta, 1.),
             ('minBeta', args.min_beta),
             ('gamma', args.max_gamma),
@@ -27,6 +28,7 @@ def get_train_instance_name(args, adata: anndata.AnnData):
             ('epsilon', args.max_epsilon),
             ('zeta', args.max_zeta),
             ('eta', args.max_eta),
+            ('lambda', args.max_lambda),
             ('cycBeta', args.cyclic_anneal),
             ('linBeta', args.linear_anneal, 2400),
             ('linEpsilon', args.linear_anneal_epsilon),
@@ -47,7 +49,8 @@ def get_train_instance_name(args, adata: anndata.AnnData):
             ('qn', args.quantile_norm),
             ('log1p', args.log1p),
             ('normRdCnt', args.norm_cell_read_counts),
-            (args.log_str, args.log_str)
+            (args.log_str, args.log_str),
+            ('cellBatchScaling', args.cell_batch_scaling)
     ):
         if bool_:
             strs.append(name)
@@ -102,7 +105,9 @@ def get_epsilon(args, step):
 def get_logging_items(embeddings, step, lr, gumbel_tau, args, adata,
                       tracked_items, tracked_metric, cell_types):
     print('Evaluating and logging...', flush=True, end='\r')
-    items = [('step', '%7d' % step), ('gumbel', '%6.4f' % gumbel_tau)]
+    items = [('step', '%7d' % step)]
+    if args.gumbel:
+        items.add(('gumbel', '%6.4f' % gumbel_tau))
     if args.lr_decay < 1.:
         items.append(('lr', '%7.2e' % lr))
     for key, val in tracked_items.items():
