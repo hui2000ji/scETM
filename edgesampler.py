@@ -3,20 +3,31 @@ import threading
 import anndata
 import numpy as np
 import torch
+from scipy.sparse import csr_matrix
 
 from data_utils import VoseAlias
 
 
 class CellSampler(threading.Thread):
     def __init__(self, adata: anndata.AnnData, args, device=torch.device('cuda:0' if torch.cuda.is_available() else "cpu"),
-                 n_epochs=np.inf):
+                 n_epochs=np.inf, rng=None):
         super().__init__(daemon=True)
         self.n_cells = adata.n_obs
         self.batch_size = args.batch_size
         self.device = device
         self.n_epochs = n_epochs
-        self.library_size = adata.X.sum(1, keepdims=True)
-        self.X = (adata.X / self.library_size) if args.norm_cells else adata.X
+        self.is_sparse = isinstance(adata.X, csr_matrix)
+        self.norm_cells = args.norm_cells
+        self.X = adata.X
+        self.rng = rng
+        if self.is_sparse:
+            self.library_size = adata.X.sum(1)
+        else:
+            self.library_size = adata.X.sum(1, keepdims=True)
+        if self.norm_cells:
+            self.X = self.X / self.library_size
+            if self.is_sparse:
+                self.X = csr_matrix(self.X)
         self.sample_batches = args.max_lambda or args.cell_batch_scaling
 
         self.pipeline = Pipeline()
@@ -47,25 +58,87 @@ class CellSampler(threading.Thread):
         cell_range = np.arange(self.n_cells)
         np.random.shuffle(cell_range)
         while count < self.n_epochs:
-            if entry_index + self.batch_size >= self.n_cells:
-                count += 1
-                batch = cell_range[entry_index:]
-                np.random.shuffle(cell_range)
-                excess = entry_index + self.batch_size - self.n_cells
-                if excess > 0 and count < self.n_epochs:
-                    batch = np.append(batch, cell_range[:excess], axis=0)
-                entry_index = excess
+            if self.rng is not None:
+                batch = self.rng.choice(cell_range, size=self.batch_size)
             else:
-                batch = cell_range[entry_index: entry_index + self.batch_size]
-                entry_index += self.batch_size
+                if entry_index + self.batch_size >= self.n_cells:
+                    count += 1
+                    batch = cell_range[entry_index:]
+                    np.random.shuffle(cell_range)
+                    excess = entry_index + self.batch_size - self.n_cells
+                    if excess > 0 and count < self.n_epochs:
+                        batch = np.append(batch, cell_range[:excess], axis=0)
+                    entry_index = excess
+                else:
+                    batch = cell_range[entry_index: entry_index + self.batch_size]
+                    entry_index += self.batch_size
             library_size = torch.FloatTensor(self.library_size[batch]).to(self.device)
-            cells = torch.FloatTensor(self.X[batch]).to(self.device)
+            X = self.X[batch, :]
+            if self.is_sparse:
+                X = X.todense()
+            cells = torch.FloatTensor(X).to(self.device)
             cell_indices = torch.LongTensor(batch).to(self.device)
             result_dict = dict(cells=cells, library_size=library_size, cell_indices=cell_indices)
             if self.sample_batches:
                 result_dict['batch_indices'] = torch.LongTensor(self.batch_indices[batch]).to(self.device)
             self.pipeline.set_message(result_dict)
- 
+
+
+class CellSamplerPool:
+    def __init__(self, n_samplers, adata: anndata.AnnData, args,
+                 device=torch.device('cuda:0' if torch.cuda.is_available() else "cpu"), n_epochs=np.inf):
+        self.samplers = [
+            CellSampler(adata, args,
+                        device=device,
+                        n_epochs=n_epochs,
+                        rng=np.random.default_rng(i * 100 + np.random.randint(100))
+                       ) for i in range(n_samplers)]
+        self.current = 0
+        self.n_samplers = n_samplers
+
+    def start(self):
+        for sampler in self.samplers:
+            sampler.start()
+
+    @property
+    def pipeline(self):
+        pl = self.samplers[self.current].pipeline
+        self.current += 1
+        if self.current == self.n_samplers:
+            self.current = 0
+        return pl
+
+    def join(self, seconds):
+        for sampler in self.samplers:
+            sampler.join(seconds)
+
+
+from torch.utils.data import Dataset
+class CellDataset(Dataset):
+    def __init__(self, adata: anndata.AnnData, args):
+        super().__init__()
+        self.X = adata.X
+        self.is_sparse = isinstance(adata.X, csr_matrix)
+        self.norm_cells = args.norm_cells
+        if self.is_sparse:
+            self.library_size = adata.X.sum(1)
+        else:
+            self.library_size = adata.X.sum(1, keepdims=True)
+        if self.norm_cells:
+            self.X = self.X / self.library_size
+            if self.is_sparse:
+                self.X = csr_matrix(self.X)
+
+    
+    def __getitem__(self, index):
+        if self.is_sparse:
+            return self.X.getrow(index).toarray()[0]
+        else:
+            return self.X[index]
+
+    def __len__(self):
+        return self.X.shape[0]
+
 
 class NonZeroEdgeSampler(threading.Thread):
     def __init__(self, adata: anndata.AnnData, args, device=torch.device('cuda:0' if torch.cuda.is_available() else "cpu"),
@@ -209,7 +282,11 @@ class VAEdgeSamplerPool:
         rows, cols = adata.X.nonzero()
         weights = adata.X[rows, cols]
         weights = weights / weights.sum()
-        gene_prob = adata.X.sum(0) ** args.neg_power
+        if isinstance(adata.X, csr_matrix):
+            weights = np.array(weights)[0]
+            gene_prob = np.array(adata.X.sum(0))[0] ** args.neg_power
+        else:
+            gene_prob = adata.X.sum(0) ** args.neg_power
         gene_prob = gene_prob / gene_prob.sum()
         edge_sampler = VoseAlias(np.vstack((rows, cols)).T, weights)
         node_sampler = VoseAlias(
@@ -243,23 +320,16 @@ class VAEdgeSamplerPool:
 
 
 if __name__ == '__main__':
-    adata = anndata.AnnData(X=np.arange(6).reshape(2, 3))
-    from my_parser import parser
-    args = parser.parse_args()
+    from time import time
+    from tqdm import tqdm
+    from my_parser import args
+    adata = anndata.read_h5ad('../data/HumanPancreas/HumanPancreas.h5ad')
+    sampler = CellSamplerPool(4, adata, args)
+    sampler.start()
+    start = time()
+    current = 0
+    for _ in tqdm(range(400)):
+        sampler.pipeline.get_message()
 
-    cell_gene_sampler = VAEdgeSampler(adata, args)
-    cell_gene_sampler.start()
-
-    edge_bins = np.zeros((2, 3), dtype=np.int64)
-    gene_bins = np.zeros(3, dtype=np.int64)
-    print('started edge sampler')
-    for _ in range(100):
-        data_dict = cell_gene_sampler.pipeline.get_message()
-        cells, genes, neg_genes = data_dict['cells'], data_dict['genes'], data_dict['neg_genes']
-        for j in range(3):
-            for i in range(2):
-                edge_bins[i, j] += ((cells == i) & (genes == j)).sum()
-            gene_bins[j] += (neg_genes == j).sum()
-    print(edge_bins)
-    print()
-    print(gene_bins)
+    end = time()
+    print(end - start)

@@ -18,6 +18,7 @@ def get_train_instance_name(args, adata: anndata.AnnData):
     for tuple_ in (
             ('genes', args.subsample_genes, adata.n_vars),
             ('nLabels', args.n_labels, adata.obs.cell_types.nunique()),
+            ('nTopics', args.n_topics, 100),
             ('clip', args.clip),
             ('scale', args.scale),
             ('lr', args.lr, 2e-2),
@@ -32,7 +33,7 @@ def get_train_instance_name(args, adata: anndata.AnnData):
             ('cycBeta', args.cyclic_anneal),
             ('linBeta', args.linear_anneal, 2400),
             ('linEpsilon', args.linear_anneal_epsilon),
-            ('linEta', args.linear_anneal_eta),
+            ('linEta', args.linear_anneal_eta, 2400),
             ('cLoss', args.g2c_factor, 1.),
             ('negSmpls', args.neg_samples, 5),
             ('negWeight', args.neg_weight, 1.)
@@ -50,7 +51,8 @@ def get_train_instance_name(args, adata: anndata.AnnData):
             ('log1p', args.log1p),
             ('normRdCnt', args.norm_cell_read_counts),
             (args.log_str, args.log_str),
-            ('cellBatchScaling', args.cell_batch_scaling)
+            ('cellBatchScaling', args.cell_batch_scaling),
+            ('normCells', args.norm_cells)
     ):
         if bool_:
             strs.append(name)
@@ -144,7 +146,7 @@ def get_logging_items(embeddings, step, lr, gumbel_tau, args, adata,
                 [(gene_type == i).sum() for i in range(args.n_labels)])))
         else:
             raise ValueError('Invalid cell type key ' + cell_type_key)
-    if adata.obs.batch_indices.nunique() > 1:
+    if adata.obs.batch_indices.nunique() > 1 and step == args.updates and not args.no_be:  # Only calc BE at last step
         for name, latent_space in embeddings:
             items.append((f'{name}_BE', '%7.4f' % 
                 entropy_batch_mixing(latent_space, adata.obs.batch_indices)))
@@ -164,7 +166,7 @@ def draw_embeddings(adata: anndata.AnnData, step: int, args, cell_types: dict,
             prefix = cell_type_key.split('_')[0]
             cell_type = cell_types[cell_type_key]
             if prefix in args.always_draw or step == args.updates:
-                cell_type_keys. append(prefix)
+                cell_type_keys.append(prefix)
                 adata.obs[prefix] = cell_type
                 adata.obs[prefix] = adata.obs[prefix].astype(
                     'str').astype('category')
@@ -181,7 +183,7 @@ def draw_embeddings(adata: anndata.AnnData, step: int, args, cell_types: dict,
             fig.savefig(
                 os.path.join(
                     # ckpt_dir, f'{train_instance_name}_{emb_name}_step{step}.jpg'),
-                    ckpt_dir, f'{emb_name}_step{step}.jpg'),
+                    ckpt_dir, f'{emb_name}_step{step}.png'),
                 dpi=300, bbox_inches='tight'
             )
         fig.clf()

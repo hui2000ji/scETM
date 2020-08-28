@@ -8,6 +8,9 @@ from torch.autograd import Function
 from scvi.models.distributions import ZeroInflatedNegativeBinomial
 from scvi.models.modules import DecoderSCVI
 from torch.distributions import Normal, Independent
+from scipy.sparse import csr_matrix
+from sklearn.metrics import adjusted_rand_score, adjusted_mutual_info_score, \
+    normalized_mutual_info_score
 
 
 def get_emb(num_emb, emb_dim, n_enc_layers):
@@ -32,7 +35,7 @@ def get_dec(num_emb, emb_dim, n_dec_layers):
     return nn.Sequential(*dec_layers)
 
 
-class CellGeneModel(nn.Module):
+class  CellGeneModel(nn.Module):
     def __init__(self, adata: anndata.AnnData, args,
                  device=torch.device(
                      "cuda:0" if torch.cuda.is_available() else "cpu")):
@@ -52,28 +55,28 @@ class CellGeneModel(nn.Module):
         self.cell_batch_scaling = args.cell_batch_scaling
 
         if self.cell_batch_scaling:
-            self.batch_emb = get_emb(self.n_batches, self.emb_dim, self.encoder_depth).to(device)
+            self.batch_emb = get_emb(self.n_batches, self.emb_dim, self.encoder_depth)
 
         self.cell_type_emb = nn.Linear(
-            self.emb_dim, self.n_labels, bias=False).to(device)
+            self.emb_dim, self.n_labels, bias=False)
         if self.cell_type_dec:
             self.cell_type_dec = nn.Linear(
-                self.n_labels, self.emb_dim).to(device)
+                self.n_labels, self.emb_dim)
         self.w_cell_emb = get_emb(
-            self.n_cells, self.emb_dim, self.encoder_depth).to(device)
+            self.n_cells, self.emb_dim, self.encoder_depth)
         self.w_gene_emb = get_emb(
-            self.n_genes, self.emb_dim, self.encoder_depth).to(device)
+            self.n_genes, self.emb_dim, self.encoder_depth)
 
         if self.neg_samples:
             self.c_gene_emb = nn.Embedding(
-                self.n_genes, self.emb_dim).to(device)
+                self.n_genes, self.emb_dim)
             if self.decoder_depth > 1:
                 self.gene_decoder = get_dec(
                     self.emb_dim, self.emb_dim,
-                    self.decoder_depth - 1).to(device)
+                    self.decoder_depth - 1)
         else:
             self.gene_decoder = get_dec(
-                self.n_genes, self.emb_dim, self.decoder_depth).to(device)
+                self.n_genes, self.emb_dim, self.decoder_depth)
         self.init_emb()
 
     @staticmethod
@@ -146,6 +149,9 @@ class CellGeneModel(nn.Module):
 
     def get_cell_type(self, cell_gene_sampler, adata=None, args=None, hard_accum=False):
         self.eval()
+        weights = self.get_cell_emb_weights()
+        adata.obsm['w_cell_emb'] = weights['w_cell_emb']
+        sc.pp.neighbors(adata, n_neighbors=args.n_neighbors, use_rep='w_cell_emb')
         return dict(
             p_cell_type=get_p_type(self, adata),
             q_cell_type=get_q_type(
@@ -200,10 +206,10 @@ class CellGeneModel(nn.Module):
         qz, pz = fwd_dict['qz'], fwd_dict['pz']
         cells = data_dict['cells']
 
-        qz_plus = qz + 1e-30
+        qz_plus = qz + 1e-50
         log_qz = torch.log(qz_plus)
         # KLD = torch.sum(qz * (log_qz - torch.log(pz + 1e-20)), dim=-1).mean()
-        KLD = (log_qz - torch.log(pz + 1e-30)).sum(-1).mean()
+        KLD = (qz * (log_qz - torch.log(pz + 1e-50))).sum(-1).mean()
 
         BCE_gene = self.get_c2g_loss(fwd_dict, data_dict, hyper_param_dict)
         loss = BCE_gene + hyper_param_dict['beta'] * KLD
@@ -259,15 +265,15 @@ class vGraphEM(nn.Module):
         self.cell_batch_scaling = args.cell_batch_scaling
 
         self.cell_type_emb = nn.Linear(
-            self.emb_dim + (self.n_batches if self.batch_removal else 0), self.n_labels, bias=False).to(device)
+            self.emb_dim + (self.n_batches if self.batch_removal else 0), self.n_labels, bias=False)
         self.w_cell_emb = get_emb(
-            self.n_cells, self.emb_dim, self.encoder_depth).to(device)
+            self.n_cells, self.emb_dim, self.encoder_depth)
         if self.cell_batch_scaling:
-            # self.cell_scaler = nn.Parameter(torch.ones((self.n_cells, 1), dtype=torch.float32)).to(device)
-            self.gene_scaler = nn.Parameter(torch.rand((self.n_batches, self.n_genes), dtype=torch.float32)).to(device)
+            # self.cell_scaler = nn.Parameter(torch.ones((self.n_cells, 1), dtype=torch.float32))
+            self.gene_scaler = nn.Parameter(torch.randn((1, self.n_batches, self.n_genes), dtype=torch.float32))
 
         self.gene_decoder = get_dec(
-            self.n_genes, self.emb_dim + (self.n_batches if self.batch_removal else 0), self.decoder_depth).to(device)
+            self.n_genes, self.emb_dim + (self.n_batches if self.batch_removal else 0), self.decoder_depth)
         self.init_emb()
 
         self.E_result = None
@@ -319,12 +325,14 @@ class vGraphEM(nn.Module):
 
         if self.cell_batch_scaling:
             batch_indices = data_dict['batch_indices']
-            c_logit = self.gene_decoder(cell_type_emb_weight) + self.gene_scaler[batch_indices] 
+            c_logit = self.gene_decoder(cell_type_emb_weight).unsqueeze_(1) + self.gene_scaler  # [n_labels, n_batches, n_genes]
+            pc_z = F.softmax(c_logit, dim=-1)
+            pcz_w = pz_w * (pc_z[:, batch_indices, genes]).T
         else:
             c_logit = self.gene_decoder(cell_type_emb_weight)
-        pc_z = F.softmax(c_logit, dim=-1).T
+            pc_z = F.softmax(c_logit, dim=-1)
+            pcz_w = pz_w * pc_z.T[genes]
 
-        pcz_w = pz_w * pc_z[genes]
         if hyper_param_dict['E']:
             qz_wc = (pcz_w / pcz_w.sum(1, keepdims=True)).detach()
             self.E_result = qz_wc
@@ -335,16 +343,20 @@ class vGraphEM(nn.Module):
 
     def get_cell_type(self, cell_gene_sampler, adata=None, args=None, hard_accum=False):
         self.eval()
+        weights = self.get_cell_emb_weights()
+        adata.obsm['w_cell_emb'] = weights['w_cell_emb']
+        sc.pp.neighbors(adata, n_neighbors=args.n_neighbors, use_rep='w_cell_emb')
         result = dict(
             p_cell_type=get_p_type(self, adata),
             q_cell_type=get_q_type(self, cell_gene_sampler, key='qz_wc'),
-            ouvain_cell_type=get_louvain_type(self, adata, args),
+            # ouvain_cell_type=get_louvain_type(self, adata, args),
             leiden_cell_type=get_leiden_type(self, adata, args)
         )
         return result
 
     def get_loss(self, fwd_dict, data_dict, hyper_param_dict):
         pcz_w, qz_wc = fwd_dict['pcz_w'], fwd_dict['qz_wc']
+        qz_wc = torch.zeros_like(qz_wc, device=self.device).copy_(qz_wc)
         loss = -(qz_wc * (pcz_w + 1e-30).log()).sum(1).mean()
         
         new_items = {}
@@ -374,13 +386,13 @@ class LINE(nn.Module):
         self.batch_removal = args.max_lambda > 0
 
         self.w_cell_emb = get_emb(
-            self.n_cells, self.emb_dim, 1).to(device)
+            self.n_cells, self.emb_dim, 1)
         if self.batch_removal:
             self.batch_clf = nn.Sequential(
                 nn.Linear(self.emb_dim, self.emb_dim // 2),
                 nn.ReLU(),
                 nn.Linear(self.emb_dim // 2, adata.obs.batch_indices.nunique())
-            ).to(device)
+            )
 
             class RevGrad(Function):
                 @staticmethod
@@ -400,10 +412,10 @@ class LINE(nn.Module):
             
         if self.neg_samples:
             self.c_gene_emb = nn.Embedding(
-                self.n_genes, self.emb_dim).to(device)
+                self.n_genes, self.emb_dim)
         else:
             self.gene_decoder = get_dec(
-                self.n_genes, self.emb_dim, 1).to(device)
+                self.n_genes, self.emb_dim, 1)
         self.init_emb()
 
 
@@ -471,6 +483,9 @@ class LINE(nn.Module):
 
     def get_cell_type(self, cell_gene_sampler, adata=None, args=None, hard_accum=False):
         self.eval()
+        weights = self.get_cell_emb_weights()
+        adata.obsm['w_cell_emb'] = weights['w_cell_emb']
+        sc.pp.neighbors(adata, n_neighbors=args.n_neighbors, use_rep='w_cell_emb')
         louvain_cell_type = get_louvain_type(self, adata, args)
         k_cell_type = get_k_type(self)
         return {
@@ -512,8 +527,8 @@ class vGraphWithCellProfile(nn.Module):
             nn.ReLU(),
             nn.BatchNorm1d(self.emb_dim),
             nn.Dropout(0.1)
-        ).to(device)
-        self.mu_q_theta = nn.Linear(self.emb_dim, self.n_labels, bias=True).to(device)
+        )
+        self.mu_q_theta = nn.Linear(self.emb_dim, self.n_labels, bias=True)
 
         self.mu_decoder = nn.Parameter(torch.randn(self.n_labels, self.n_genes, device=device))
         self.logdisp_decoder = nn.Parameter(torch.randn(self.n_labels, self.n_genes, device=device))
@@ -579,6 +594,9 @@ class vGraphWithCellProfile(nn.Module):
 
     def get_cell_type(self, cell_gene_sampler, adata=None, args=None, hard_accum=False):
         self.eval()
+        weights = self.get_cell_emb_weights()
+        adata.obsm['w_cell_emb'] = weights['w_cell_emb']
+        sc.pp.neighbors(adata, n_neighbors=args.n_neighbors, use_rep='w_cell_emb')
         result = dict(
             q_cell_type=self.E_step(dict(cells=self.X))['qz'].argmax(1).detach().cpu().numpy(),
             ouvain_cell_type=get_louvain_type(self, adata, args),
@@ -637,9 +655,9 @@ class vGraphEMCell(nn.Module):
             nn.ReLU(),
             nn.BatchNorm1d(self.emb_dim),
             nn.Dropout(0.1)
-        ).to(device)
-        self.mu_q_delta = nn.Linear(self.emb_dim, self.n_labels, bias=True).to(device)
-        self.logsigma_q_delta = nn.Linear(self.emb_dim, self.n_labels, bias=True).to(device)
+        )
+        self.mu_q_delta = nn.Linear(self.emb_dim, self.n_labels, bias=True)
+        self.logsigma_q_delta = nn.Linear(self.emb_dim, self.n_labels, bias=True)
 
 
         # self.mu_decoder = nn.Parameter(torch.randn(self.n_labels, self.n_genes, device=device))
@@ -755,6 +773,9 @@ class scETM(nn.Module):
         super().__init__()
 
         args.neg_samples = 0
+        args.cell_sampling = True
+        args.tracked_metric = "l_nmi"
+        args.always_draw = ('cell_types', 'leiden', 'p', 'batch_indices')
 
         self.emb_dim = args.emb_dim
         self.n_labels = args.n_labels
@@ -771,12 +792,18 @@ class scETM(nn.Module):
         self.batch_removal = args.max_lambda > 0
         self.norm_cells = args.norm_cells
         self.cell_batch_scaling = args.cell_batch_scaling
-        self.library_size = adata.X.sum(1, keepdims=True)
+        self.is_sparse = isinstance(adata.X, csr_matrix)
+        if self.is_sparse:
+            self.library_size = adata.X.sum(1)
+        else:
+            self.library_size = adata.X.sum(1, keepdims=True)
         self.X = (adata.X / self.library_size) if self.norm_cells else adata.X
+        if self.is_sparse:
+            self.X = csr_matrix(self.X)
         self.batch_indices = adata.obs.batch_indices.astype(int)
  
         self.q_delta = nn.Sequential(
-            nn.Linear(self.n_genes, self.emb_dim * 2),
+            nn.Linear(self.n_genes + ((self.n_batches - 1) if self.batch_removal else 0), self.emb_dim * 2),
             nn.ReLU(),
             nn.BatchNorm1d(self.emb_dim * 2),
             nn.Dropout(0.1),
@@ -784,21 +811,36 @@ class scETM(nn.Module):
             nn.ReLU(),
             nn.BatchNorm1d(self.emb_dim),
             nn.Dropout(0.1)
-        ).to(device)
-        self.mu_q_delta = nn.Linear(self.emb_dim, self.n_topics, bias=True).to(device)
-        self.logsigma_q_delta = nn.Linear(self.emb_dim, self.n_topics, bias=True).to(device)
+        )
+        self.mu_q_delta = nn.Linear(self.emb_dim, self.n_topics, bias=True)
+        self.logsigma_q_delta = nn.Linear(self.emb_dim, self.n_topics, bias=True)
 
-        self.beta = nn.Linear(self.n_topics + ((self.n_batches - 1) if self.batch_removal else 0), self.n_genes, bias=True).to(device)
+        # self.beta = nn.Linear(self.n_topics + ((self.n_batches - 1) if self.batch_removal else 0), self.n_genes, bias=True)
+        self.rho = nn.Linear(1000, self.n_genes, bias=False)
+        self.rho.weight = nn.Parameter(torch.FloatTensor(adata.varm['gene_emb']))
+        self.alpha = nn.Parameter(torch.randn(self.n_topics, 1000))
+        # self.logsigma_alpha = nn.Parameter(torch.randn(self.n_topics, 300, device=device))
+        # self.beta = nn.Sequential(
+        #     nn.Linear(self.n_topics + ((self.n_batches - 1) if self.batch_removal else 0), self.emb_dim),
+        #     nn.ReLU(),
+        #     nn.BatchNorm1d(self.emb_dim),
+        #     nn.Dropout(0.1),
+        #     nn.Linear(self.emb_dim, self.emb_dim * 2),
+        #     nn.ReLU(),
+        #     nn.BatchNorm1d(self.emb_dim * 2),
+        #     nn.Dropout(0.1),
+        #     nn.Linear(self.emb_dim * 2, self.n_genes)
+        # )
         # self.beta = nn.Parameter(torch.randn(self.n_topics, self.n_genes, device=device))
         if self.cell_batch_scaling:
-            self.cell_bias = nn.Parameter(torch.randn(self.n_cells, 1)).to(device)
-            self.gene_bias = nn.Parameter(torch.randn(self.n_batches, self.n_genes)).to(device)
+            # self.cell_bias = nn.Parameter(torch.ones(self.n_cells, 1))
+            self.gene_bias = nn.Parameter(torch.randn(self.n_batches, self.n_genes))
 
         ## cap log variance within [-10, 10]
         self.max_logsigma = 10
         self.min_logsigma = -10
 
-        self.init_emb()
+        # self.init_emb()
 
     @staticmethod
     def _init_emb(emb):
@@ -829,26 +871,30 @@ class scETM(nn.Module):
         if self.n_cells > self.batch_size:
             thetas, deltas = [], []
             for start in range(0, self.n_cells, self.batch_size):
-                cells = torch.FloatTensor(self.X[start: start + self.batch_size]).to(self.device)
+                X = self.X[start: start + self.batch_size, :]
+                if self.is_sparse:
+                    X = X.todense()
+                cells = torch.FloatTensor(X).to(self.device)
                 library_size = torch.FloatTensor(self.library_size[start: start + self.batch_size]).to(self.device)
                 data_dict = dict(cells=cells, library_size=library_size,
                     cell_indices=torch.arange(start, min(start + self.batch_size, self.n_cells), device=self.device))
                 if self.batch_removal or self.cell_batch_scaling:
                     batch_indices = torch.LongTensor(self.batch_indices[start: start + self.batch_size]).to(self.device)
                     data_dict['batch_indices'] = batch_indices
-                fwd_dict = self(data_dict)
+                fwd_dict = self(data_dict, dict(val=True))
                 thetas.append(fwd_dict['theta'].detach().cpu())
                 deltas.append(fwd_dict['delta'].detach().cpu())
             theta = torch.cat(thetas, dim=0).numpy()
             delta = torch.cat(deltas, dim=0).numpy()
         else:
-            cells = torch.FloatTensor(self.X).to(self.device)
+            X = self.X.todense() if self.is_sparse else self.X
+            cells = torch.FloatTensor(X).to(self.device)
             library_size = torch.FloatTensor(self.library_size).to(self.device)
             data_dict = dict(cells=cells, library_size=library_size, cell_indices=torch.arange(self.n_cells, device=self.device))
             if self.batch_removal or self.cell_batch_scaling:
                 batch_indices = torch.LongTensor(self.batch_indices).to(self.device)
                 data_dict['batch_indices'] = batch_indices
-            fwd_dict = self(data_dict)
+            fwd_dict = self(data_dict, dict(val=True))
             theta = fwd_dict['theta'].detach().cpu().numpy()
             delta = fwd_dict['delta'].detach().cpu().numpy()
         return {'theta': theta, 'delta': delta}
@@ -859,29 +905,37 @@ class scETM(nn.Module):
         
         q_delta = self.q_delta(cells)
         mu_q_delta = self.mu_q_delta(q_delta)
-        logsigma_q_delta = self.logsigma_q_delta(q_delta).clamp_(self.min_logsigma, self.max_logsigma)
-        p_delta = Independent(Normal(
-            loc=torch.zeros(batch_size, self.n_topics, dtype=torch.float32, device=self.device),
-            scale=torch.ones(batch_size, self.n_topics, dtype=torch.float32, device=self.device)
-        ), 1)
+
+        if 'val' in hyper_param_dict:
+            return dict(theta=F.softmax(mu_q_delta, dim=-1), delta=mu_q_delta)
+
+        logsigma_q_delta = self.logsigma_q_delta(q_delta).clamp(self.min_logsigma, self.max_logsigma)
         q_delta = Independent(Normal(
             loc=mu_q_delta,
             scale=logsigma_q_delta.exp()
         ), 1)
+
         delta = q_delta.rsample()
         theta = F.softmax(delta, dim=-1)  # [batch_size, n_topics]
 
+        beta = self.rho(self.alpha)  # [n_topics, n_genes]
         if self.batch_removal:
-            recon_logit = self.beta(torch.cat((theta, self._get_batch_indices_oh(data_dict)), dim=1))
+            new_theta = torch.cat((theta, self._get_batch_indices_oh(data_dict)), dim=1)
         else:
-            recon_logit = self.beta(theta)  # [batch_size, n_genes]
+            new_theta = theta
+
+        # recon_logit = self.beta(new_theta)  # [batch_size, n_genes]
+        recon_logit = torch.mm(new_theta, beta)  # [batch_size, n_genes]
+
         if self.cell_batch_scaling:
-            recon_logit += self.cell_bias[data_dict['cell_indices']] * self.gene_bias[data_dict['batch_indices']]
+            # recon_logit += self.cell_bias[data_dict['cell_indices']] * self.gene_bias[data_dict['batch_indices']]
+            recon_logit += self.gene_bias[data_dict['batch_indices']]
         # recon_logit = torch.mm(theta, F.softmax(self.beta, dim=-1))
         fwd_dict = dict(
             nll=(-F.log_softmax(recon_logit, dim=-1) * ((cells * library_size) if self.norm_cells else cells)).sum(-1).mean(),
+            # nll=((F.softmax(recon_logit, dim=-1) - ((cells / library_size) if not self.norm_cells else cells)) ** 2).sum(-1).mean(),
             # nll=(-recon_logit.log() * cells).sum(-1).mean(),
-            kl=(q_delta.log_prob(delta) - p_delta.log_prob(delta)).mean(),
+            kl_delta=get_kl(mu_q_delta, logsigma_q_delta).mean(),
             theta=theta,
             delta=delta
         )
@@ -890,8 +944,10 @@ class scETM(nn.Module):
     def get_cell_type(self, cell_gene_sampler, adata=None, args=None, hard_accum=False):
         self.eval()
         weights = self.get_cell_emb_weights()
-        p_cell_type = weights['delta'].argmax(-1)
+        p_cell_type = weights['theta'].argmax(-1)
 
+        adata.obsm['delta'] = weights['delta']
+        sc.pp.neighbors(adata, n_neighbors=args.n_neighbors, use_rep='delta')
         result = dict(
             p_cell_type=p_cell_type,
             ouvain_cell_type=get_louvain_type(self, adata, args, use_rep='delta'),
@@ -900,15 +956,9 @@ class scETM(nn.Module):
         return result
 
     def get_loss(self, fwd_dict, data_dict, hyper_param_dict):
-        nll, kl = fwd_dict['nll'], fwd_dict['kl']
-        loss = nll + hyper_param_dict['beta'] * kl
-        new_items = dict(nll=nll, kl=kl)
-
-        if hyper_param_dict['epsilon']:
-            BCE_gene_LINE = self.get_LINE_loss(
-                fwd_dict, data_dict, hyper_param_dict)
-            loss = loss + hyper_param_dict['epsilon'] * BCE_gene_LINE
-            new_items['Llg'] = BCE_gene_LINE
+        nll, kl_delta = fwd_dict['nll'], fwd_dict['kl_delta']
+        loss = nll + hyper_param_dict['beta'] * kl_delta
+        new_items = dict(nll=nll, kl_delta=kl_delta)
 
         loss, new_items = get_gg_cc_loss(
             self, fwd_dict, data_dict, hyper_param_dict, loss, new_items)
@@ -922,6 +972,7 @@ class NewModel(nn.Module):
         super().__init__()
 
         args.neg_samples = 0
+        args.cell_sampling = True
 
         self.emb_dim = args.emb_dim
         self.n_labels = args.n_labels
@@ -953,11 +1004,11 @@ class NewModel(nn.Module):
             nn.ReLU(),
             nn.BatchNorm1d(self.emb_dim),
             nn.Dropout(0.1)
-        ).to(device)
-        self.mu_q_delta = nn.Linear(self.emb_dim, self.n_topics, bias=True).to(device)
-        self.logsigma_q_delta = nn.Linear(self.emb_dim, self.n_topics, bias=True).to(device)
+        )
+        self.mu_q_delta = nn.Linear(self.emb_dim, self.n_topics, bias=True)
+        self.logsigma_q_delta = nn.Linear(self.emb_dim, self.n_topics, bias=True)
 
-        # self.beta = nn.Linear(self.n_topics + ((self.n_batches - 1) if self.batch_removal else 0), self.n_genes, bias=True).to(device)
+        # self.beta = nn.Linear(self.n_topics + ((self.n_batches - 1) if self.batch_removal else 0), self.n_genes, bias=True)
         # self.beta = nn.Parameter(torch.randn(self.n_genes, self.n_topics, device=device))
         self.rho = nn.Parameter(torch.randn(self.n_genes, self.emb_dim, device=device))
         self.alpha = nn.Parameter(torch.randn(self.emb_dim, self.n_topics, device=device))
@@ -1074,6 +1125,8 @@ class NewModel(nn.Module):
         weights = self.get_cell_emb_weights()
         p_cell_type = weights['delta'].argmax(-1)
 
+        adata.obsm['delta'] = weights['delta']
+        sc.pp.neighbors(adata, n_neighbors=args.n_neighbors, use_rep='delta')
         result = dict(
             p_cell_type=p_cell_type,
             ouvain_cell_type=get_louvain_type(self, adata, args, use_rep='delta'),
@@ -1176,44 +1229,53 @@ def get_q_type(model, cell_gene_sampler, hard_accum=False, key='qz'):
 
 def get_louvain_type(model, adata, args, use_rep='w_cell_emb'):
     print('Performing louvain clustering...', flush=True, end='\r')
-    adata.obsm[use_rep] = model.get_cell_emb_weights()[use_rep]
-    for _ in range(3):
-        sc.pp.neighbors(adata, n_neighbors=args.n_neighbors, use_rep=use_rep)
-        sc.tl.louvain(adata, resolution=args.louvain_resolution)
-        if args.fix_resolution:
-            break
-        if adata.obs.louvain.nunique() < args.n_labels / 2:
-            args.louvain_resolution *= 1.9
-        elif adata.obs.louvain.nunique() < args.n_labels / 1.2:
-            args.louvain_resolution *= 1.2
-        elif adata.obs.louvain.nunique() > args.n_labels * 2:
-            args.louvain_resolution /= 2
-        elif adata.obs.louvain.nunique() > args.n_labels * 1.1:
-            args.louvain_resolution /= 1.3
-        else:
-            break
-    return adata.obs['louvain'].astype(int)
+    aris = []  # List of (resolution, ARI score)
+    print('=' * 10 + ' louvain ' + '=' * 10)
+    for res in args.louvain_resolutions:
+        col = f'louvain_{res}'
+        sc.tl.louvain(adata, resolution=res, key_added=col)
+        ari = adjusted_rand_score(adata.obs.cell_types, adata.obs[col])
+        n_unique = adata.obs[col].nunique()
+        aris.append((res, ari, n_unique))
+        print(f'Resolution: {res:5.3g}\tARI: {ari:7.4f}\t# labels: {n_unique}')
+
+    aris.sort(key=lambda x: x[1], reverse=True)
+    best_res = aris[0][0]
+
+    aris.sort(key=lambda x: x[2])
+    n_labels = adata.obs.cell_types.nunique()
+    if aris[1][2] < n_labels / 2 and aris[-1][2] <= n_labels:
+        args.louvain_resolutions = [res + 0.05 for res in args.louvain_resolutions]
+    elif aris[-1][2] > n_labels:
+        args.louvain_resolutions = [res - min(0.1, min(args.louvain_resolutions) / 2) for res in args.louvain_resolutions]
+ 
+    return adata.obs[f'louvain_{best_res}'].astype(int)
 
 
 def get_leiden_type(model, adata, args, use_rep='w_cell_emb'):
     print('Performing leiden clustering...', flush=True, end='\r')
-    adata.obsm[use_rep] = model.get_cell_emb_weights()[use_rep]
-    for _ in range(3):
-        sc.pp.neighbors(adata, n_neighbors=args.n_neighbors, use_rep=use_rep)
-        sc.tl.leiden(adata, resolution=args.leiden_resolution)
-        if args.fix_resolution:
-            break
-        if adata.obs.leiden.nunique() < args.n_labels / 2:
-            args.leiden_resolution *= 1.9
-        elif adata.obs.leiden.nunique() < args.n_labels / 1.2:
-            args.leiden_resolution *= 1.2
-        elif adata.obs.leiden.nunique() > args.n_labels * 2:
-            args.leiden_resolution /= 2
-        elif adata.obs.leiden.nunique() > args.n_labels * 1.1:
-            args.leiden_resolution /= 1.3
-        else:
-            break
-    return adata.obs['leiden'].astype(int)
+    aris = []  # List of (resolution, ARI score)
+
+    print('=' * 10 + ' leiden ' + '=' * 10)
+    for res in args.leiden_resolutions:
+        col = f'leiden_{res}'
+        sc.tl.leiden(adata, resolution=res, key_added=col)
+        ari = adjusted_rand_score(adata.obs.cell_types, adata.obs[col])
+        n_unique = adata.obs[col].nunique()
+        aris.append((res, ari, n_unique))
+        print(f'Resolution: {res:5.3g}\tARI: {ari:7.4f}\t# labels: {n_unique}')
+
+    aris.sort(key=lambda x: x[1], reverse=True)
+    best_res = aris[0][0]
+
+    aris.sort(key=lambda x: x[2])
+    n_labels = adata.obs.cell_types.nunique()
+    if aris[1][2] < n_labels / 2 and aris[-1][2] <= n_labels:
+        args.leiden_resolutions = [res + 0.05 for res in args.leiden_resolutions]
+    elif aris[-1][2] > n_labels:
+        args.leiden_resolutions = [res - min(0.1, min(args.leiden_resolutions) / 2) for res in args.leiden_resolutions]
+
+    return adata.obs[f'leiden_{best_res}'].astype(int)
 
 
 def get_k_type(model):
@@ -1223,6 +1285,11 @@ def get_k_type(model):
     kmeans.fit_transform(arr)
     kmeans_cell_type = kmeans.labels_
     return kmeans_cell_type
+
+
+def get_kl(mu, logsigma):
+    return -0.5 * (1 + logsigma - mu.pow(2) - logsigma.exp()).sum(-1)
+
 
 class BlackHole(object):
     def __setattr__(self, name, value):

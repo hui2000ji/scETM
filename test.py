@@ -1,38 +1,21 @@
-from sklearn.neighbors import NearestNeighbors
-import numpy as np
-import pandas as pd
-import scipy
+from torch.distributions import Normal, Independent
+import torch
 
+q = Independet(Normal(
+    loc=torch.tensor([[0, 1, 2, 3, 4], [5, 6, 7, 8, 9]]),
+    scale=torch.tensor([[1, 1, 1, 1, 1], [2, 1, 2, 1, 2]])
+), 1)
 
-def entropy_batch_mixing(latent_space, batches, n_neighbors=50, n_pools=50, n_samples_per_pool=100):
-    # code adapted from scGAN
-    def entropy(hist_data):
-        counts = pd.Series(hist_data[:, 0]).value_counts()
-        freqs = counts / counts.sum()
-        return (-freqs * np.log(freqs)).sum()
+p = Independet(Normal(
+    loc=torch.tensor([[0, 1.5, 2, 3, 3.5], [6, 6, 6, 7, 9]]),
+    scale=torch.tensor([[1, 2, 1, 1, 2], [2, 2, 2, 1, 0.5]])
+), 1)
 
-    n_neighbors = min(n_neighbors, len(latent_space) - 1)
-    nne = NearestNeighbors(n_neighbors=1 + n_neighbors, n_jobs=8)
-    nne.fit(latent_space)
-    kmatrix = nne.kneighbors_graph(
-        latent_space) - scipy.sparse.identity(latent_space.shape[0])
+x = q.rsample()
+print(q.log_prob(x) - p.log_prob(x))
 
-    score = 0.
-    for t in range(n_pools):
-        indices = np.random.choice(
-            np.arange(latent_space.shape[0]), size=n_samples_per_pool)
-        score += np.mean(
-            [
-                entropy(
-                    batches[
-                        kmatrix[indices[i]].nonzero()[1]
-                    ]
-                )
-                for i in range(n_samples_per_pool)
-            ]
-        )
-    return score / n_pools
+kl = ( sigma_q_sq + (q_mu - p_mu)**2 ) / ( sigma_p_sq + 1e-6 )
+kl = kl - 1 + p_logsigma - q_logsigma
+kl = 0.5 * torch.sum(kl, dim=-1)
 
-
-print(entropy_batch_mixing(np.random.randn(30, 7),
-                           np.random.randint(0, 2, size=(30, 1))))
+print(kl)

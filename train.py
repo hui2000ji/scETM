@@ -6,18 +6,20 @@ from pathlib import Path
 from glob import glob
 from collections import defaultdict
 
+import matplotlib
 import numpy as np
 import anndata
 import scanpy as sc
 import torch
 from torch import optim
+from torch.utils.data import DataLoader
 
 from edgesampler import NonZeroEdgeSampler, VAEdgeSampler, \
-    VAEdgeSamplerPool, CellSampler
+    VAEdgeSamplerPool, CellSampler, CellSamplerPool
 from train_utils import get_beta, get_epsilon, get_eta, \
     get_train_instance_name, logging, get_logging_items, draw_embeddings
 from datasets import available_datasets
-from my_parser import parser
+from my_parser import args
 from model import *
 
 sc.settings.set_figure_params(
@@ -29,12 +31,15 @@ def train(model, adata: anndata.AnnData, args,
               "cuda:0" if torch.cuda.is_available() else "cpu")):
     # set up initial learning rate and optimizer
     lr = args.lr * (np.exp(-args.lr_decay) ** (args.restore_step))
-    optimizer = optim.Adam(model.parameters(), lr=lr)
+    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1.2e-6)
     gumbel_tau = max(args.gumbel_min, args.gumbel_max * (np.exp(-args.gumbel_anneal) ** args.restore_step))
 
     # Samplers
     if args.cell_sampling:
-        cell_gene_sampler = CellSampler(adata, args)
+        if args.n_samplers == 1:
+            cell_gene_sampler = CellSampler(adata, args)
+        else:
+            cell_gene_sampler = CellSamplerPool(args.n_samplers, adata, args)
     elif not args.no_alias_sampling:
         if args.n_samplers == 1:
             cell_gene_sampler = VAEdgeSampler(adata, args)
@@ -43,18 +48,18 @@ def train(model, adata: anndata.AnnData, args,
     else:
         cell_gene_sampler = NonZeroEdgeSampler(adata, args)
     samplers = [cell_gene_sampler]
-    if args.max_delta:
-        cc_edges = ((adata.X/adata.X.sum(1, keepdims=True))@
-                    (adata.X/adata.X.sum(0, keepdims=True)).T).flatten()
-        cell_sampler = EdgeSampler(
-            cc_edges, args.batch_size, adata.n_obs, device)
-        samplers.append(cell_sampler)
-    if args.max_gamma:
-        gg_edges = ((adata.X/adata.X.sum(0, keepdims=True)).T@
-                    (adata.X/adata.X.sum(1, keepdims=True))).flatten()
-        gene_sampler = EdgeSampler(
-            gg_edges, args.batch_size, adata.n_vars, device)
-        samplers.append(gene_sampler)
+    # if args.max_delta:
+    #     cc_edges = ((adata.X/adata.X.sum(1, keepdims=True))@
+    #                 (adata.X/adata.X.sum(0, keepdims=True)).T).flatten()
+    #     cell_sampler = EdgeSampler(
+    #         cc_edges, args.batch_size, adata.n_obs, device)
+    #     samplers.append(cell_sampler)
+    # if args.max_gamma:
+    #     gg_edges = ((adata.X/adata.X.sum(0, keepdims=True)).T@
+    #                 (adata.X/adata.X.sum(1, keepdims=True))).flatten()
+    #     gene_sampler = EdgeSampler(
+    #         gg_edges, args.batch_size, adata.n_vars, device)
+    #     samplers.append(gene_sampler)
     for sampler in samplers:
         sampler.start()
 
@@ -120,12 +125,12 @@ def train(model, adata: anndata.AnnData, args,
             # construct data_dict
             if not args.m_step or hyper_param_dict['E']:
                 data_dict = cell_gene_sampler.pipeline.get_message()
-                if args.max_gamma:
-                    g1, g2 = gene_sampler.pipeline.get_message()
-                    data_dict['g1'], data_dict['g2'] = g1, g2
-                if args.max_delta:
-                    c1, c2 = cell_sampler.pipeline.get_message()
-                    data_dict['c1'], data_dict['c2'] = c1, c2
+                # if args.max_gamma:
+                #     g1, g2 = gene_sampler.pipeline.get_message()
+                #     data_dict['g1'], data_dict['g2'] = g1, g2
+                # if args.max_delta:
+                #     c1, c2 = cell_sampler.pipeline.get_message()
+                #     data_dict['c1'], data_dict['c2'] = c1, c2
 
             # train for one step
             model.train()
@@ -201,45 +206,74 @@ def train(model, adata: anndata.AnnData, args,
                 os.remove(os.path.join(ckpt_dir, 'model-%d' % step_))
                 os.remove(os.path.join(ckpt_dir, 'opt-%d' % step_))
         # save final inferred cell types
-        try:
-            for cell_type_key in cell_types:
-                if cell_type_key.endswith('cell_type'):
-                    prefix = cell_type_key[0]
-                    cell_type = cell_types[cell_type_key]
-                    with open(os.path.join(ckpt_dir, prefix +
-                                           '_cell_type.pickle'), 'wb') as f_:
-                        pickle.dump(cell_type, f_)
-        except:
-            import traceback
-            traceback.print_exc()
+        if cell_types is not None:
+            try:
+                for cell_type_key in cell_types:
+                    if cell_type_key.endswith('cell_type'):
+                        prefix = cell_type_key[0]
+                        cell_type = cell_types[cell_type_key]
+                        with open(os.path.join(ckpt_dir, prefix +
+                                            '_cell_type.pickle'), 'wb') as f_:
+                            pickle.dump(cell_type, f_)
+            except:
+                import traceback
+                traceback.print_exc()
+        
 
 
 if __name__ == '__main__':
-    args = parser.parse_args()
-    if args.dataset_path:
+    matplotlib.use('Agg')
+    # torch.manual_seed(2020)
+    # torch.backends.cudnn.deterministic = True
+    # torch.backends.cudnn.benchmark = False
+    # np.random.seed(0)
+
+    if args.h5ad_path:
+        adata = anndata.read_h5ad(args.h5ad_path)
+        args.dataset_str = Path(args.h5ad_path).stem
+    elif args.anndata_path:
         import pickle
-        with open(args.dataset_path, 'rb') as f:
+        with open(args.anndata_path, 'rb') as f:
+            adata = pickle.load(f)
+        args.dataset_str = Path(args.anndata_path).stem
+    elif args.dataframe_path:
+        import pickle
+        with open(args.dataframe_path, 'rb') as f:
             df = pickle.load(f)
+            df.reset_index(drop=True, inplace=True)
         annotations = ['batch_id', 'cell_id', 'cell_type']
         if 'barcode' in df.columns:
             annotations.append('barcode')
-        # change column names
         df_anno = df[annotations]
-        col = list(df_anno.columns)
-        col[col.index('cell_type')] = 'cell_types'
-        col[col.index('batch_id')] = 'batch_indices'
-        df_anno.columns = col
-
         df.drop(annotations, axis=1, inplace=True)
-        adata = anndata.AnnData(X=df.values, obs=df_anno)
-        adata.obs_names_make_unique()
-        if args.log1p:
-            sc.pp.log1p(adata)
-        args.dataset_str = Path(args.dataset_path).name.split('.')[0]
-        if adata.obs.batch_indices.nunique() < 100:
-            adata.obs.batch_indices = adata.obs.batch_indices.astype('str').astype('category')
+        adata = anndata.AnnData(X=df, obs=df_anno)
+        args.dataset_str = Path(args.dataframe_path).stem
     else:
         adata = available_datasets[args.dataset_str].get_dataset(args)
+
+    col = list(map(lambda s: s.lower(), list(adata.obs.columns)))
+    adata.obs.columns = col
+    if 'cell_type' in col:
+        col[col.index('cell_type')] = 'cell_types'
+    convert_batch_to_int = False
+    if 'batch_id' in col:
+        batches = list(adata.obs.batch_id.unique())
+        batches.sort()
+        if not isinstance(batches[-1], str) and batches[-1] + 1 == len(batches):
+            col[col.index('batch_id')] = 'batch_indices'
+        else:
+            convert_batch_to_int = True
+    adata.obs.columns = col
+    if convert_batch_to_int:
+        adata.obs['batch_indices'] = adata.obs.batch_id.apply(lambda x: batches.index(x))
+
+    adata.obs_names_make_unique()
+    adata.var_names_make_unique()
+    if args.log1p:
+        sc.pp.log1p(adata)
+    if adata.obs.batch_indices.nunique() < 100:
+        adata.obs.batch_indices = adata.obs.batch_indices.astype('str').astype('category')
+
     if not args.n_labels:
         args.n_labels = adata.obs.cell_types.nunique()
     if not args.eval_batches:
@@ -247,5 +281,6 @@ if __name__ == '__main__':
 
     model_dict = dict(vGraph=CellGeneModel, vGraphEM=vGraphEM, LINE=LINE, vGraphWithCellProfile=vGraphWithCellProfile, vGraphEMCell=vGraphEMCell, scETM=scETM, NewModel=NewModel)
     Model = model_dict[args.model]
-    model = Model(adata, args)
+    model = Model(adata, args).to(torch.device('cuda:0'))
+    print([tuple(param.shape) for param in model.parameters()])
     train(model, adata, args)
