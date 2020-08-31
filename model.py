@@ -789,6 +789,7 @@ class scETM(nn.Module):
         self.eval_batches = args.eval_batches
         self.encoder_depth = args.encoder_depth
         self.decoder_depth = args.decoder_depth
+        self.normed_loss = args.normed_loss
         self.batch_removal = args.max_lambda > 0
         self.norm_cells = args.norm_cells
         self.cell_batch_scaling = args.cell_batch_scaling
@@ -817,7 +818,7 @@ class scETM(nn.Module):
 
         # self.beta = nn.Linear(self.n_topics + ((self.n_batches - 1) if self.batch_removal else 0), self.n_genes, bias=True)
         self.rho = nn.Linear(1000, self.n_genes, bias=False)
-        self.rho.weight = nn.Parameter(torch.FloatTensor(adata.varm['gene_emb']))
+        # self.rho.weight = nn.Parameter(torch.FloatTensor(adata.varm['gene_emb']))
         self.alpha = nn.Parameter(torch.randn(self.n_topics, 1000))
         # self.logsigma_alpha = nn.Parameter(torch.randn(self.n_topics, 300, device=device))
         # self.beta = nn.Sequential(
@@ -932,7 +933,7 @@ class scETM(nn.Module):
             recon_logit += self.gene_bias[data_dict['batch_indices']]
         # recon_logit = torch.mm(theta, F.softmax(self.beta, dim=-1))
         fwd_dict = dict(
-            nll=(-F.log_softmax(recon_logit, dim=-1) * ((cells * library_size) if self.norm_cells else cells)).sum(-1).mean(),
+            nll=(-F.log_softmax(recon_logit, dim=-1) * ((cells * library_size) if self.norm_cells and not self.normed_loss else cells)).sum(-1).mean(),
             # nll=((F.softmax(recon_logit, dim=-1) - ((cells / library_size) if not self.norm_cells else cells)) ** 2).sum(-1).mean(),
             # nll=(-recon_logit.log() * cells).sum(-1).mean(),
             kl_delta=get_kl(mu_q_delta, logsigma_q_delta).mean(),

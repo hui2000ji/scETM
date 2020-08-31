@@ -45,8 +45,6 @@ parser.add_argument('--n-labels', type=int, default=0, help='number of labels in
 parser.add_argument('--n-topics', type=int, default=100, help='number of topics in model')
 parser.add_argument('--log-str', type=str, default='', help='additional string on ckpt dir name')
 parser.add_argument('--tracked-metric', type=str, default='q_nmi', help='metric to track for auto ckpt deletion')
-parser.add_argument('--g2c-factor', type=float, default=1., help='ratio between g2c and c2g losses. '
-                                                                 'Only valid for vGraph2 / TwoWayCellGeneModel')
 parser.add_argument('--neg-power', type=float, default=0.75, help='Power parameter in negative sampling')
 parser.add_argument('--neg-samples', type=int, default=5, help='Number of negative samplers per training sample')
 parser.add_argument('--neg-weight', type=float, default=1, help="weight of negative sample weights")
@@ -61,6 +59,7 @@ parser.add_argument('--leiden-resolutions', type=float, nargs='*', default=(0.05
 parser.add_argument('--no-alias-sampling', action='store_true', help='disable Vose Alias Sampling')
 parser.add_argument('--cell-sampling', action='store_true', help='enable cell Sampling')
 parser.add_argument('--norm-cells', action='store_true', help='normalize cell samples')
+parser.add_argument('--normed-loss', action='store_true', help='whether to normalize gene expression when calculating loss')
 parser.add_argument('--no-be', action='store_true', help='do not calculate batch mixing entropy')
 parser.add_argument('--m-step', type=int, default=0, help='Number of batches for M-step')
 parser.add_argument('--encoder-depth', type=int, default=1, help='depth of the encoder')
