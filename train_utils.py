@@ -34,7 +34,6 @@ def get_train_instance_name(args, adata: anndata.AnnData):
             ('linBeta', args.linear_anneal, 2400),
             ('linEpsilon', args.linear_anneal_epsilon),
             ('linEta', args.linear_anneal_eta, 2400),
-            ('cLoss', args.g2c_factor, 1.),
             ('negSmpls', args.neg_samples, 5),
             ('negWeight', args.neg_weight, 1.)
     ):
