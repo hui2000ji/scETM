@@ -19,15 +19,15 @@ class CellSampler(threading.Thread):
         self.is_sparse = isinstance(adata.X, csr_matrix)
         self.norm_cells = args.norm_cells
         self.X = adata.X
+        self.supervised = args.max_supervised_weight > 0
         self.rng = rng
+        if self.supervised:
+            cell_types = list(adata.obs.cell_types.unique())
+            self.cell_type_indices = adata.obs.cell_types.apply(lambda x: cell_types.index(x))
         if self.is_sparse:
             self.library_size = adata.X.sum(1)
         else:
             self.library_size = adata.X.sum(1, keepdims=True)
-        if self.norm_cells:
-            self.X = self.X / self.library_size
-            if self.is_sparse:
-                self.X = csr_matrix(self.X)
         self.sample_batches = args.max_lambda or args.cell_batch_scaling
 
         self.pipeline = Pipeline()
@@ -48,6 +48,8 @@ class CellSampler(threading.Thread):
         result_dict = dict(cells=X, library_size=library_size, cell_indices=cell_indices)
         if self.sample_batches:
             result_dict['batch_indices'] = torch.LongTensor(self.batch_indices).to(self.device)
+        if self.supervised:
+            result_dict['cell_type_indices'] = torch.LongTensor(self.cell_type_indices).to(self.device)
         while count < self.n_epochs:
             count += 1
             self.pipeline.set_message(result_dict)
@@ -81,6 +83,8 @@ class CellSampler(threading.Thread):
             result_dict = dict(cells=cells, library_size=library_size, cell_indices=cell_indices)
             if self.sample_batches:
                 result_dict['batch_indices'] = torch.LongTensor(self.batch_indices[batch]).to(self.device)
+            if self.supervised:
+                result_dict['cell_type_indices'] = torch.LongTensor(self.cell_type_indices[batch]).to(self.device)
             self.pipeline.set_message(result_dict)
 
 

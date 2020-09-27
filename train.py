@@ -18,12 +18,12 @@ from edgesampler import NonZeroEdgeSampler, VAEdgeSampler, \
     VAEdgeSamplerPool, CellSampler, CellSamplerPool
 from train_utils import get_beta, get_epsilon, get_eta, \
     get_train_instance_name, logging, get_logging_items, draw_embeddings
-from datasets import available_datasets
+from datasets import available_datasets, process_dataset
 from my_parser import args
 from model import *
 
 sc.settings.set_figure_params(
-    dpi=120, dpi_save=300, facecolor='white', fontsize=10, figsize=(10, 10))
+    dpi=120, dpi_save=250, facecolor='white', fontsize=10, figsize=(10, 10))
 
 
 def train(model, adata: anndata.AnnData, args,
@@ -31,7 +31,7 @@ def train(model, adata: anndata.AnnData, args,
               "cuda:0" if torch.cuda.is_available() else "cpu")):
     # set up initial learning rate and optimizer
     lr = args.lr * (np.exp(-args.lr_decay) ** (args.restore_step))
-    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1.2e-6)
+    optimizer = optim.Adam(model.parameters(), lr=lr)
     gumbel_tau = max(args.gumbel_min, args.gumbel_max * (np.exp(-args.gumbel_anneal) ** args.restore_step))
 
     # Samplers
@@ -105,8 +105,7 @@ def train(model, adata: anndata.AnnData, args,
     cell_types = None
     try:
         while step < args.updates:
-            print('Training: Step {:7d}/{:7d}\tNext ckpt: {:7d}'.format(
-                step, args.updates, next_checkpoint), end='\r')
+            print(f'Training: Epoch {epoch:5d}/{args.n_epochs:5d} Step {step:7d}/{args.updates:7d}\tNext ckpt: {next_checkpoint:7d}', end='\r')
 
             # construct hyper_param_dict
             hyper_param_dict = {
@@ -119,7 +118,8 @@ def train(model, adata: anndata.AnnData, args,
                 'eta': get_eta(args, step),
                 'lambda': args.max_lambda,
                 'neg_weight': args.neg_weight,
-                'E': args.m_step and step % args.m_step == 0
+                'E': args.m_step and step % args.m_step == 0,
+                'supervised_weight': args.max_supervised_weight
             }
 
             # construct data_dict
@@ -164,7 +164,7 @@ def train(model, adata: anndata.AnnData, args,
                 next_checkpoint += args.log_every
 
                 # display log and save embedding visualization
-                embeddings = model.get_cell_emb_weights().items()
+                embeddings = model.get_cell_emb_weights()
                 items = get_logging_items(
                     embeddings, step, lr, hyper_param_dict['tau'], args, adata,
                     tracked_items, tracked_metric, cell_types)
@@ -223,10 +223,11 @@ def train(model, adata: anndata.AnnData, args,
 
 if __name__ == '__main__':
     matplotlib.use('Agg')
-    # torch.manual_seed(2020)
-    # torch.backends.cudnn.deterministic = True
-    # torch.backends.cudnn.benchmark = False
-    # np.random.seed(0)
+    if args.seed >= 0:
+        torch.manual_seed(args.seed)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+        np.random.seed(args.seed)
 
     if args.h5ad_path:
         adata = anndata.read_h5ad(args.h5ad_path)
@@ -250,36 +251,20 @@ if __name__ == '__main__':
         args.dataset_str = Path(args.dataframe_path).stem
     else:
         adata = available_datasets[args.dataset_str].get_dataset(args)
+    adata = process_dataset(adata, args)
 
-    col = list(map(lambda s: s.lower(), list(adata.obs.columns)))
-    adata.obs.columns = col
-    if 'cell_type' in col:
-        col[col.index('cell_type')] = 'cell_types'
-    convert_batch_to_int = False
-    if 'batch_id' in col:
-        batches = list(adata.obs.batch_id.unique())
-        batches.sort()
-        if not isinstance(batches[-1], str) and batches[-1] + 1 == len(batches):
-            col[col.index('batch_id')] = 'batch_indices'
-        else:
-            convert_batch_to_int = True
-    adata.obs.columns = col
-    if convert_batch_to_int:
-        adata.obs['batch_indices'] = adata.obs.batch_id.apply(lambda x: batches.index(x))
+    args.updates = args.n_epochs * adata.n_obs / args.batch_size
 
-    adata.obs_names_make_unique()
-    adata.var_names_make_unique()
-    if args.log1p:
-        sc.pp.log1p(adata)
-    if adata.obs.batch_indices.nunique() < 100:
-        adata.obs.batch_indices = adata.obs.batch_indices.astype('str').astype('category')
-
-    if not args.n_labels:
-        args.n_labels = adata.obs.cell_types.nunique()
-    if not args.eval_batches:
-        args.eval_batches = int(np.round(3000000 / args.batch_size))
-
-    model_dict = dict(vGraph=CellGeneModel, vGraphEM=vGraphEM, LINE=LINE, vGraphWithCellProfile=vGraphWithCellProfile, vGraphEMCell=vGraphEMCell, scETM=scETM, NewModel=NewModel)
+    model_dict = dict(
+        vGraph=CellGeneModel,
+        vGraphEM=vGraphEM,
+        LINE=LINE,
+        MixtureOfMultinomial=MixtureOfMultinomial,
+        MixtureOfZINB=MixtureOfZINB,
+        scETM=scETM,
+        NewModel=NewModel,
+        scETMMultiDecoder=scETMMultiDecoder
+    )
     Model = model_dict[args.model]
     model = Model(adata, args).to(torch.device('cuda:0'))
     print([tuple(param.shape) for param in model.parameters()])

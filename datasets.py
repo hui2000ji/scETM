@@ -4,7 +4,7 @@ import scanpy as sc
 import scvi.dataset
 import anndata
 import pandas as pd
-
+import numpy as np
 
 def load_tabula_muris(args):
     mat_path = '../data/TM/FACS.csv'
@@ -33,20 +33,38 @@ def load_tabula_muris(args):
     return dataset.to_anndata()
 
 
-def process_dataset(get_dataset, args):
-    if args.subsample_genes < 0:
-        args.subsample_genes = available_datasets[args.dataset_str].n_genes
-    adata = get_dataset(args)
+def process_dataset(adata, args):
     if args.norm_cell_read_counts:
         sc.pp.normalize_total(adata, target_sum=1e4)
-    if args.subsample_genes < adata.n_vars:
-        sc.pp.highly_variable_genes(adata, n_top_genes=args.subsample_genes)
-        adata = adata[:, adata.var.highly_variable]
     if args.quantile_norm:
         from sklearn.preprocessing import quantile_transform
         adata.X = quantile_transform(adata.X, axis=1, copy=True)
     if args.log1p:
         sc.pp.log1p(adata)
+
+    col = list(map(lambda s: s.lower(), list(adata.obs.columns)))
+    adata.obs.columns = col
+    if 'cell_types' not in col and 'cell_type' in col:
+        col[col.index('cell_type')] = 'cell_types'
+    convert_batch_to_int = False
+    if 'batch_indices' not in col and 'batch_id' in col:
+        batches = list(adata.obs.batch_id.unique())
+        batches.sort()
+        if not isinstance(batches[-1], str) and batches[-1] + 1 == len(batches):
+            col[col.index('batch_id')] = 'batch_indices'
+        else:
+            convert_batch_to_int = True
+    adata.obs.columns = col
+    if convert_batch_to_int:
+        adata.obs['batch_indices'] = adata.obs.batch_id.apply(lambda x: batches.index(x))
+
+    adata.obs_names_make_unique()
+
+    if not args.n_labels:
+        args.n_labels = adata.obs.cell_types.nunique()
+    if not args.eval_batches:
+        args.eval_batches = int(np.round(3000000 / args.batch_size))
+
     if adata.obs.batch_indices.nunique() < 100:
         adata.obs.batch_indices = adata.obs.batch_indices.astype('str').astype('category')
     return adata
@@ -57,7 +75,7 @@ class DatasetConfig:
         self.name = name
         self.n_genes = n_genes
         self.n_labels = n_labels
-        self.get_dataset = lambda args: process_dataset(get_dataset, args)
+        self.get_dataset = lambda args: process_dataset(get_dataset(args), args)
 
 
 def get_HCL_adult_thyroid(args):
@@ -73,8 +91,7 @@ def get_TM_pancreas(args):
 
 
 def get_cortex(args):
-    return scvi.dataset.CortexDataset('../data/cortex',
-                                      total_genes=(args.subsample_genes if args.subsample_genes else None)).to_anndata()
+    return scvi.dataset.CortexDataset('../data/cortex').to_anndata()
 
 
 def get_mouse_pancreas(args):

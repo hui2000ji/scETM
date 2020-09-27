@@ -16,7 +16,6 @@ def get_train_instance_name(args, adata: anndata.AnnData):
         args.dataset_str,
         args.model]
     for tuple_ in (
-            ('genes', args.subsample_genes, adata.n_vars),
             ('nLabels', args.n_labels, adata.obs.cell_types.nunique()),
             ('nTopics', args.n_topics, 100),
             ('clip', args.clip),
@@ -34,8 +33,10 @@ def get_train_instance_name(args, adata: anndata.AnnData):
             ('linBeta', args.linear_anneal, 2400),
             ('linEpsilon', args.linear_anneal_epsilon),
             ('linEta', args.linear_anneal_eta, 2400),
-            ('negSmpls', args.neg_samples, 5),
-            ('negWeight', args.neg_weight, 1.)
+            ('negSmpls', args.neg_samples),
+            ('negWeight', args.neg_weight, 1.),
+            ('maskRatio', args.mask_ratio, 0.2),
+            ('supervised', args.max_supervised_weight, 0.)
     ):
         if len(tuple_) == 2:
             name, numeric_ = tuple_
@@ -51,7 +52,8 @@ def get_train_instance_name(args, adata: anndata.AnnData):
             ('normRdCnt', args.norm_cell_read_counts),
             (args.log_str, args.log_str),
             ('cellBatchScaling', args.cell_batch_scaling),
-            ('normCells', args.norm_cells)
+            ('normCells', args.norm_cells),
+            ('normedLoss', args.normed_loss)
     ):
         if bool_:
             strs.append(name)
@@ -146,7 +148,7 @@ def get_logging_items(embeddings, step, lr, gumbel_tau, args, adata,
         else:
             raise ValueError('Invalid cell type key ' + cell_type_key)
     if adata.obs.batch_indices.nunique() > 1 and step == args.updates and not args.no_be:  # Only calc BE at last step
-        for name, latent_space in embeddings:
+        for name, latent_space in embeddings.items():
             items.append((f'{name}_BE', '%7.4f' % 
                 entropy_batch_mixing(latent_space, adata.obs.batch_indices)))
     # clear tracked_items    
@@ -169,10 +171,15 @@ def draw_embeddings(adata: anndata.AnnData, step: int, args, cell_types: dict,
                 adata.obs[prefix] = cell_type
                 adata.obs[prefix] = adata.obs[prefix].astype(
                     'str').astype('category')
-    cell_type_keys.append('cell_types')
     if adata.obs.batch_indices.nunique() > 1:
-        cell_type_keys = ['batch_indices'] + cell_type_keys
-    for emb_name, emb in embeddings:
+        cell_type_keys.append('batch_indices')
+    cell_type_keys.append('cell_types')
+    for key in args.always_draw:
+        if not key in cell_type_keys and key in adata.obs:
+            cell_type_keys.append(key)
+            adata.obs[key] = adata.obs[key].astype(
+                'str').astype('category')
+    for emb_name, emb in embeddings.items():
         adata.obsm[emb_name] = emb
         sc.pp.neighbors(adata, use_rep=emb_name, n_neighbors=args.n_neighbors)
         sc.tl.umap(adata, min_dist=args.min_dist, spread=args.spread)

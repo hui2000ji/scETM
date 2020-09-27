@@ -494,197 +494,99 @@ class LINE(nn.Module):
         }
 
 
-class vGraphWithCellProfile(nn.Module):
+class BaseCellModel(nn.Module):
     def __init__(self, adata: anndata.AnnData, args,
                  device=torch.device(
                      "cuda:0" if torch.cuda.is_available() else "cpu")):
         super().__init__()
-
-        args.neg_samples = 0
-
         self.emb_dim = args.emb_dim
         self.n_labels = args.n_labels
         self.device = device
         self.n_cells = adata.n_obs
         self.n_genes = adata.n_vars
         self.n_batches = adata.obs.batch_indices.nunique()
-        self.neg_samples = args.neg_samples
         self.batch_size = args.batch_size
-        self.eval_batches = args.eval_batches
-        self.encoder_depth = args.encoder_depth
-        self.decoder_depth = args.decoder_depth
-        self.batch_removal = args.max_lambda > 0
-        self.cell_batch_scaling = args.cell_batch_scaling
-        self.X = torch.FloatTensor(adata.X).to(self.device)
-        # self.library_size = adata.X.sum(1)
+        self.mask_ratio = args.mask_ratio
+        if self.mask_ratio < 0 or self.mask_ratio > 0.5:
+            raise ValueError("Mask ratio should be between 0 and 0.5.")
+        if 'condition' in adata.obs and 'condition' not in args.always_draw:
+            args.always_draw.append('condition')
 
-        self.q_theta = nn.Sequential(
-            nn.Linear(self.n_genes, self.emb_dim * 2),
-            nn.ReLU(),
-            nn.BatchNorm1d(self.emb_dim * 2),
-            nn.Dropout(0.1),
-            nn.Linear(self.emb_dim * 2, self.emb_dim),
-            nn.ReLU(),
-            nn.BatchNorm1d(self.emb_dim),
-            nn.Dropout(0.1)
-        )
-        self.mu_q_theta = nn.Linear(self.emb_dim, self.n_labels, bias=True)
-
-        self.mu_decoder = nn.Parameter(torch.randn(self.n_labels, self.n_genes, device=device))
-        self.logdisp_decoder = nn.Parameter(torch.randn(self.n_labels, self.n_genes, device=device))
-        self.zi_decoder = nn.Parameter(torch.randn(self.n_labels, self.n_genes, device=device))
-
-        self.E_result = None
-            
-        self.init_emb()
-
-    @staticmethod
-    def _init_emb(emb):
-        if isinstance(emb, nn.Linear):
-            nn.init.xavier_uniform_(emb.weight.data)
-            if emb.bias is not None:
-                emb.bias.data.fill_(0.0)
-        elif isinstance(emb, nn.Sequential):
-            for child in emb:
-                vGraphWithCellProfile._init_emb(child)
-
-    def init_emb(self):
-        for m in self.modules():
-            self._init_emb(m)
-
-    def get_cell_emb_weights(self):
-        w_emb = self.q_theta(self.X).detach().cpu().numpy()
-        return {'w_cell_emb': w_emb}
-
-    def _get_batch_indices_oh(self, data_dict):
-        if 'batch_indices_oh' in data_dict:
-            w_batch_id = data_dict['batch_indices_oh']
+        self.is_sparse = isinstance(adata.X, csr_matrix)
+        if self.is_sparse:
+            self.library_size = adata.X.sum(1)
         else:
-            batch_indices = data_dict['batch_indices'].unsqueeze(1)
-            w_batch_id = torch.zeros((batch_indices.shape[0], self.n_batches), dtype=torch.float32, device=self.device)
-            w_batch_id.scatter_(1, batch_indices, 1.)
-            data_dict['batch_indices_oh'] = w_batch_id
-        return w_batch_id
+            self.library_size = adata.X.sum(1, keepdims=True)
+        self.X = adata.X
 
-    def E_step(self, data_dict=dict(), hyper_param_dict=dict(E=False)):
-        cells = data_dict['cells']
-        q_theta = self.q_theta(cells)
-        mu_q_theta = self.mu_q_theta(q_theta)
-        pz_x = F.softmax(mu_q_theta, dim=-1)
-        self.E_result = dict(pz_x=pz_x, qz=pz_x.detach())
-        return self.E_result
+    def mask_gene_expression(self, cells):
+        if self.mask_ratio > 0:
+            return cells * (torch.rand_like(cells, device=self.device, dtype=torch.float32) * (1 - 2 * self.mask_ratio))
+        else:
+            return cells
 
-    def forward(self, data_dict, hyper_param_dict=dict(E=False)):
-        if hyper_param_dict['E']:
-            self.E_step(data_dict, hyper_param_dict)
-        fwd_dict = self.E_result
+    def get_cell_emb_weights(self, weight_names):
+        if isinstance(weight_names, str):
+            weight_names = [weight_names]
 
-        cells, library_size = data_dict['cells'], data_dict['library_size']
+        if self.n_cells > self.batch_size:
+            weights = {name: [] for name in weight_names}
+            for start in range(0, self.n_cells, self.batch_size):
+                X = self.X[start: start + self.batch_size, :]
+                if self.is_sparse:
+                    X = X.todense()
+                cells = torch.FloatTensor(X).to(self.device)
+                library_size = torch.FloatTensor(self.library_size[start: start + self.batch_size]).to(self.device)
+                data_dict = dict(cells=cells, library_size=library_size,
+                    cell_indices=torch.arange(start, min(start + self.batch_size, self.n_cells), device=self.device))
+                if self.batch_removal or self.cell_batch_scaling:
+                    batch_indices = torch.LongTensor(self.batch_indices[start: start + self.batch_size]).to(self.device)
+                    data_dict['batch_indices'] = batch_indices
+                fwd_dict = self(data_dict, dict(val=True))
+                for name in weight_names:
+                    weights[name].append(fwd_dict[name].detach().cpu())
+            weights = {name: torch.cat(weights[name], dim=0).numpy() for name in weight_names}
+        else:
+            X = self.X.todense() if self.is_sparse else self.X
+            cells = torch.FloatTensor(X).to(self.device)
+            library_size = torch.FloatTensor(self.library_size).to(self.device)
+            data_dict = dict(cells=cells, library_size=library_size, cell_indices=torch.arange(self.n_cells, device=self.device))
+            if self.batch_removal or self.cell_batch_scaling:
+                batch_indices = torch.LongTensor(self.batch_indices).to(self.device)
+                data_dict['batch_indices'] = batch_indices
+            fwd_dict = self(data_dict, dict(val=True))
+            weights = {name: fwd_dict[name].detach().cpu().numpy() for name in weight_names}
+        return weights
 
-        mu_x = F.softmax(self.mu_decoder, dim=-1).unsqueeze(0) * library_size.reshape(library_size.shape[0], 1, 1)
-        disp_x = self.logdisp_decoder.exp().unsqueeze(0)
-        zi_logits = self.zi_decoder.unsqueeze(0)
-
-        # [batch_size, n_labels]
-        log_pz_x = (self.E_result['pz_x'] + 1e-30).log()
-        log_px_z = ZeroInflatedNegativeBinomial(mu=mu_x, theta=disp_x, zi_logits=zi_logits).log_prob(cells.unsqueeze(1)).sum(-1)
-        log_pxz = log_pz_x + log_px_z
-        fwd_dict['log_pxz'] = log_pxz
-        return fwd_dict
-
-    def get_cell_type(self, cell_gene_sampler, adata=None, args=None, hard_accum=False):
-        self.eval()
-        weights = self.get_cell_emb_weights()
-        adata.obsm['w_cell_emb'] = weights['w_cell_emb']
-        sc.pp.neighbors(adata, n_neighbors=args.n_neighbors, use_rep='w_cell_emb')
-        result = dict(
-            q_cell_type=self.E_step(dict(cells=self.X))['qz'].argmax(1).detach().cpu().numpy(),
-            ouvain_cell_type=get_louvain_type(self, adata, args),
-            leiden_cell_type=get_leiden_type(self, adata, args)
-        )
-        return result
-
-    def get_loss(self, fwd_dict, data_dict, hyper_param_dict):
-        log_pxz, pz_x = fwd_dict['log_pxz'], fwd_dict['pz_x']
-
-        loss = -(pz_x * log_pxz).sum(1).mean()
-        new_items = {}
-
-        if hyper_param_dict['epsilon']:
-            BCE_gene_LINE = self.get_LINE_loss(
-                fwd_dict, data_dict, hyper_param_dict)
-            loss = loss + hyper_param_dict['epsilon'] * BCE_gene_LINE
-            new_items['Llg'] = BCE_gene_LINE
-
-        loss, new_items = get_gg_cc_loss(
-            self, fwd_dict, data_dict, hyper_param_dict, loss, new_items)
-        return loss, new_items
-
-class vGraphEMCell(nn.Module):
+class MixtureOfMultinomial(BaseCellModel):
     def __init__(self, adata: anndata.AnnData, args,
                  device=torch.device(
                      "cuda:0" if torch.cuda.is_available() else "cpu")):
-        super().__init__()
+        super().__init__(adata, args)
 
         args.neg_samples = 0
+        args.cell_sampling = True
+        args.tracked_metric = "q_nmi"
 
-        self.emb_dim = args.emb_dim
-        self.n_labels = args.n_labels
-        self.device = device
-        self.n_cells = adata.n_obs
-        self.n_genes = adata.n_vars
-        self.n_batches = adata.obs.batch_indices.nunique()
-        self.neg_samples = args.neg_samples
-        self.batch_size = args.batch_size
-        self.eval_batches = args.eval_batches
-        self.encoder_depth = args.encoder_depth
-        self.decoder_depth = args.decoder_depth
         self.batch_removal = args.max_lambda > 0
         self.norm_cells = args.norm_cells
+        self.normed_loss = args.normed_loss
         self.cell_batch_scaling = args.cell_batch_scaling
-        self.library_size = adata.X.sum(1, keepdims=True)
-        self.X = (adata.X / self.library_size) if self.norm_cells else adata.X
-        self.batch_indices = adata.obs.batch_indices.astype(int)
-
-        self.q_delta = nn.Sequential(
-            nn.Linear(self.n_genes, self.emb_dim * 2),
-            nn.ReLU(),
-            nn.BatchNorm1d(self.emb_dim * 2),
-            nn.Dropout(0.1),
-            nn.Linear(self.emb_dim * 2, self.emb_dim),
-            nn.ReLU(),
-            nn.BatchNorm1d(self.emb_dim),
-            nn.Dropout(0.1)
-        )
-        self.mu_q_delta = nn.Linear(self.emb_dim, self.n_labels, bias=True)
-        self.logsigma_q_delta = nn.Linear(self.emb_dim, self.n_labels, bias=True)
-
-
-        # self.mu_decoder = nn.Parameter(torch.randn(self.n_labels, self.n_genes, device=device))
-        # self.logdisp_decoder = nn.Parameter(torch.randn(self.n_labels, self.n_genes, device=device))
-        # self.zi_decoder = nn.Parameter(torch.randn(self.n_labels, self.n_genes, device=device))
+        self.is_sparse = isinstance(adata.X, csr_matrix)
+        if self.is_sparse:
+            self.library_size = adata.X.sum(1)
+        else:
+            self.library_size = adata.X.sum(1, keepdims=True)
         self.gene_decoder = nn.Parameter(torch.randn(self.n_labels, self.n_genes, device=device))
 
         self.E_result = None
-            
-        self.init_emb()
-
-    @staticmethod
-    def _init_emb(emb):
-        if isinstance(emb, nn.Linear):
-            nn.init.xavier_uniform_(emb.weight.data)
-            if emb.bias is not None:
-                emb.bias.data.fill_(0.0)
-        elif isinstance(emb, nn.Sequential):
-            for child in emb:
-                vGraphEMCell._init_emb(child)
 
     def init_emb(self):
         for m in self.modules():
             self._init_emb(m)
 
     def get_cell_emb_weights(self):
-        return BlackHole()
+        return {}
 
     def _get_batch_indices_oh(self, data_dict):
         if 'batch_indices_oh' in data_dict:
@@ -698,19 +600,12 @@ class vGraphEMCell(nn.Module):
 
     def forward(self, data_dict, hyper_param_dict=dict(E=True)):
         cells, library_size = data_dict['cells'], data_dict['library_size']
+        norm_cells = cells / library_size if self.norm_cells else cells
 
-        q_delta = self.q_delta(cells)
-        mu_q_delta = self.mu_q_delta(q_delta)
-        logsigma_q_delta = self.logsigma_q_delta(q_delta)
-
-        # mu_x = F.softmax(self.mu_decoder, dim=-1).unsqueeze(0) * library_size.reshape(library_size.shape[0], 1, 1)
-        # disp_x = self.logdisp_decoder.exp().unsqueeze(0)
-        # zi_logits = self.zi_decoder.unsqueeze(0)
         x = F.log_softmax(self.gene_decoder, dim=-1).unsqueeze(0)
-        log_pxz = (x * ((cells * library_size) if self.norm_cells else cells).unsqueeze(1)).sum(-1)
+        log_pxz = (x * (norm_cells if self.normed_loss else cells).unsqueeze(1)).sum(-1)
 
         # [batch_size, n_labels]
-        # log_pxz = ZeroInflatedNegativeBinomial(mu=mu_x, theta=disp_x, zi_logits=zi_logits).log_prob(cells.unsqueeze(1)).sum(-1)
         if hyper_param_dict['E']:
             qz = F.softmax(log_pxz, dim=-1).detach()
             self.E_result = qz
@@ -721,31 +616,8 @@ class vGraphEMCell(nn.Module):
 
     def get_cell_type(self, cell_gene_sampler, adata=None, args=None, hard_accum=False):
         self.eval()
-        if self.n_cells > self.batch_size:
-            q_cell_types = []
-            for start in range(0, self.n_cells, self.batch_size):
-                cells = torch.FloatTensor(self.X[start: start + self.batch_size]).to(self.device)
-                library_size = torch.FloatTensor(self.library_size[start: start + self.batch_size]).to(self.device)
-                data_dict = dict(cells=cells, library_size=library_size,
-                    cell_indices=torch.arange(start, min(start + self.batch_size, self.n_cells), device=self.device))
-                if self.batch_removal or self.cell_batch_scaling:
-                    batch_indices = torch.LongTensor(self.batch_indices[start: start + self.batch_size]).to(self.device)
-                    data_dict['batch_indices'] = batch_indices
-                q_cell_types.append(self(data_dict)['qz'].argmax(-1).detach().cpu())
-            q_cell_type = torch.cat(q_cell_types, dim=0).numpy()
-        else:
-            cells = torch.FloatTensor(self.X).to(self.device)
-            library_size = torch.FloatTensor(self.library_size).to(self.device)
-            data_dict = dict(cells=cells, library_size=library_size, cell_indices=torch.arange(self.n_cells, device=self.device))
-            if self.batch_removal or self.cell_batch_scaling:
-                batch_indices = torch.LongTensor(self.batch_indices).to(self.device)
-                data_dict['batch_indices'] = batch_indices
-            q_cell_type = self(data_dict)['qz'].argmax(-1).detach().cpu().numpy()
-
         result = dict(
-            q_cell_type=q_cell_type,
-            # ouvain_cell_type=get_louvain_type(self, adata, args),
-            # leiden_cell_type=get_leiden_type(self, adata, args)
+            q_cell_type=self.get_cell_type('qz').argmax(-1),
         )
         return result
 
@@ -754,41 +626,97 @@ class vGraphEMCell(nn.Module):
 
         loss = -(qz * log_pxz).sum(1).mean()
         new_items = {}
-
-        if hyper_param_dict['epsilon']:
-            BCE_gene_LINE = self.get_LINE_loss(
-                fwd_dict, data_dict, hyper_param_dict)
-            loss = loss + hyper_param_dict['epsilon'] * BCE_gene_LINE
-            new_items['Llg'] = BCE_gene_LINE
-
-        loss, new_items = get_gg_cc_loss(
-            self, fwd_dict, data_dict, hyper_param_dict, loss, new_items)
         return loss, new_items
 
 
-class scETM(nn.Module):
+class MixtureOfZINB(BaseCellModel):
     def __init__(self, adata: anndata.AnnData, args,
                  device=torch.device(
                      "cuda:0" if torch.cuda.is_available() else "cpu")):
-        super().__init__()
+        super().__init__(adata, args)
+
+        args.neg_samples = 0
+        args.cell_sampling = True
+        args.tracked_metric = "q_nmi"
+
+        self.batch_removal = args.max_lambda > 0
+        self.norm_cells = args.norm_cells
+        self.normed_loss = args.normed_loss
+        self.cell_batch_scaling = args.cell_batch_scaling
+        self.is_sparse = isinstance(adata.X, csr_matrix)
+        if self.is_sparse:
+            self.library_size = adata.X.sum(1)
+        else:
+            self.library_size = adata.X.sum(1, keepdims=True)
+        self.batch_indices = adata.obs.batch_indices.astype(int)
+
+        self.mu_decoder = nn.Parameter(torch.randn(self.n_labels, self.n_genes, device=device))
+        self.logdisp_decoder = nn.Parameter(torch.randn(self.n_labels, self.n_genes, device=device))
+        self.zi_decoder = nn.Parameter(torch.randn(self.n_labels, self.n_genes, device=device))
+
+        self.E_result = None
+
+    def init_emb(self):
+        for m in self.modules():
+            self._init_emb(m)
+
+    def get_cell_emb_weights(self):
+        return {}
+
+    def _get_batch_indices_oh(self, data_dict):
+        if 'batch_indices_oh' in data_dict:
+            w_batch_id = data_dict['batch_indices_oh']
+        else:
+            batch_indices = data_dict['batch_indices'].unsqueeze(1)
+            w_batch_id = torch.zeros((batch_indices.shape[0], self.n_batches), dtype=torch.float32, device=self.device)
+            w_batch_id.scatter_(1, batch_indices, 1.)
+            data_dict['batch_indices_oh'] = w_batch_id
+        return w_batch_id
+
+    def forward(self, data_dict, hyper_param_dict=dict(E=True)):
+        cells, library_size = data_dict['cells'], data_dict['library_size']
+        norm_cells = cells / library_size if self.norm_cells else cells
+
+        mu_x = F.softmax(self.mu_decoder, dim=-1).unsqueeze(0) * library_size.reshape(library_size.shape[0], 1, 1)
+        disp_x = self.logdisp_decoder.exp().unsqueeze(0)
+        zi_logits = self.zi_decoder.unsqueeze(0)
+
+        # [batch_size, n_labels]
+        log_pxz = ZeroInflatedNegativeBinomial(mu=mu_x, theta=disp_x, zi_logits=zi_logits).log_prob((norm_cells if self.normed_loss else cells).unsqueeze(1)).sum(-1)
+        if hyper_param_dict['E']:
+            qz = F.softmax(log_pxz, dim=-1).detach()
+            self.E_result = qz
+        else:
+            qz = self.E_result
+        fwd_dict = dict(log_pxz=log_pxz, qz=qz)
+        return fwd_dict
+
+    def get_cell_type(self, cell_gene_sampler, adata=None, args=None, hard_accum=False):
+        self.eval()
+        result = dict(
+            q_cell_type=self.get_cell_type('qz').argmax(-1),
+        )
+        return result
+
+    def get_loss(self, fwd_dict, data_dict, hyper_param_dict):
+        log_pxz, qz = fwd_dict['log_pxz'], fwd_dict['qz']
+
+        loss = -(qz * log_pxz).sum(1).mean()
+        new_items = {}
+        return loss, new_items
+
+
+class scETM(BaseCellModel):
+    def __init__(self, adata: anndata.AnnData, args,
+                 device=torch.device(
+                     "cuda:0" if torch.cuda.is_available() else "cpu")):
+        super().__init__(adata, args)
 
         args.neg_samples = 0
         args.cell_sampling = True
         args.tracked_metric = "l_nmi"
-        args.always_draw = ('cell_types', 'leiden', 'p', 'batch_indices')
 
-        self.emb_dim = args.emb_dim
-        self.n_labels = args.n_labels
-        self.n_topics = args.n_topics 
-        self.device = device
-        self.n_cells = adata.n_obs
-        self.n_genes = adata.n_vars
-        self.n_batches = adata.obs.batch_indices.nunique()
-        self.batch_size = args.batch_size
-        self.neg_samples = args.neg_samples
-        self.eval_batches = args.eval_batches
-        self.encoder_depth = args.encoder_depth
-        self.decoder_depth = args.decoder_depth
+        self.n_topics = args.n_topics
         self.normed_loss = args.normed_loss
         self.batch_removal = args.max_lambda > 0
         self.norm_cells = args.norm_cells
@@ -798,9 +726,6 @@ class scETM(nn.Module):
             self.library_size = adata.X.sum(1)
         else:
             self.library_size = adata.X.sum(1, keepdims=True)
-        self.X = (adata.X / self.library_size) if self.norm_cells else adata.X
-        if self.is_sparse:
-            self.X = csr_matrix(self.X)
         self.batch_indices = adata.obs.batch_indices.astype(int)
  
         self.q_delta = nn.Sequential(
@@ -816,10 +741,21 @@ class scETM(nn.Module):
         self.mu_q_delta = nn.Linear(self.emb_dim, self.n_topics, bias=True)
         self.logsigma_q_delta = nn.Linear(self.emb_dim, self.n_topics, bias=True)
 
+        self.supervised = args.max_supervised_weight > 0
+        if self.supervised:
+            self.cell_type_clf = nn.Sequential(
+                nn.Linear(self.n_topics, self.n_topics // 2),
+                nn.ReLU(),
+                nn.BatchNorm1d(self.n_topics // 2),
+                nn.Dropout(0.1),
+                nn.Linear(self.n_topics // 2, self.n_labels)
+            )
+
         # self.beta = nn.Linear(self.n_topics + ((self.n_batches - 1) if self.batch_removal else 0), self.n_genes, bias=True)
-        self.rho = nn.Linear(1000, self.n_genes, bias=False)
-        # self.rho.weight = nn.Parameter(torch.FloatTensor(adata.varm['gene_emb']))
-        self.alpha = nn.Parameter(torch.randn(self.n_topics, 1000))
+        self.rho = nn.Linear(300, self.n_genes, bias=False)
+        if 'gene_emb' in adata.varm:
+            self.rho.weight = nn.Parameter(torch.FloatTensor(adata.varm['gene_emb']))
+        self.alpha = nn.Parameter(torch.randn(self.n_topics, 300))
         # self.logsigma_alpha = nn.Parameter(torch.randn(self.n_topics, 300, device=device))
         # self.beta = nn.Sequential(
         #     nn.Linear(self.n_topics + ((self.n_batches - 1) if self.batch_removal else 0), self.emb_dim),
@@ -869,46 +805,23 @@ class scETM(nn.Module):
         return w_batch_id
 
     def get_cell_emb_weights(self):
-        if self.n_cells > self.batch_size:
-            thetas, deltas = [], []
-            for start in range(0, self.n_cells, self.batch_size):
-                X = self.X[start: start + self.batch_size, :]
-                if self.is_sparse:
-                    X = X.todense()
-                cells = torch.FloatTensor(X).to(self.device)
-                library_size = torch.FloatTensor(self.library_size[start: start + self.batch_size]).to(self.device)
-                data_dict = dict(cells=cells, library_size=library_size,
-                    cell_indices=torch.arange(start, min(start + self.batch_size, self.n_cells), device=self.device))
-                if self.batch_removal or self.cell_batch_scaling:
-                    batch_indices = torch.LongTensor(self.batch_indices[start: start + self.batch_size]).to(self.device)
-                    data_dict['batch_indices'] = batch_indices
-                fwd_dict = self(data_dict, dict(val=True))
-                thetas.append(fwd_dict['theta'].detach().cpu())
-                deltas.append(fwd_dict['delta'].detach().cpu())
-            theta = torch.cat(thetas, dim=0).numpy()
-            delta = torch.cat(deltas, dim=0).numpy()
-        else:
-            X = self.X.todense() if self.is_sparse else self.X
-            cells = torch.FloatTensor(X).to(self.device)
-            library_size = torch.FloatTensor(self.library_size).to(self.device)
-            data_dict = dict(cells=cells, library_size=library_size, cell_indices=torch.arange(self.n_cells, device=self.device))
-            if self.batch_removal or self.cell_batch_scaling:
-                batch_indices = torch.LongTensor(self.batch_indices).to(self.device)
-                data_dict['batch_indices'] = batch_indices
-            fwd_dict = self(data_dict, dict(val=True))
-            theta = fwd_dict['theta'].detach().cpu().numpy()
-            delta = fwd_dict['delta'].detach().cpu().numpy()
-        return {'theta': theta, 'delta': delta}
+        return super().get_cell_emb_weights(['theta', 'delta'])
 
     def forward(self, data_dict, hyper_param_dict=dict(E=True)):
         cells, library_size = data_dict['cells'], data_dict['library_size']
+        normed_cells = cells / library_size if self.norm_cells else cells
         batch_size = cells.shape[0]
         
-        q_delta = self.q_delta(cells)
+        q_delta = self.q_delta(normed_cells)
         mu_q_delta = self.mu_q_delta(q_delta)
 
         if 'val' in hyper_param_dict:
-            return dict(theta=F.softmax(mu_q_delta, dim=-1), delta=mu_q_delta)
+            theta = F.softmax(mu_q_delta, dim=-1)
+            if self.supervised:
+                cell_type_logit = self.cell_type_clf(mu_q_delta)
+                return dict(theta=theta, delta=mu_q_delta, cell_type_logit=cell_type_logit)
+            else:
+                return dict(theta=theta, delta=mu_q_delta)
 
         logsigma_q_delta = self.logsigma_q_delta(q_delta).clamp(self.min_logsigma, self.max_logsigma)
         q_delta = Independent(Normal(
@@ -918,6 +831,9 @@ class scETM(nn.Module):
 
         delta = q_delta.rsample()
         theta = F.softmax(delta, dim=-1)  # [batch_size, n_topics]
+
+        if self.supervised:
+            cell_type_logit = self.cell_type_clf(delta)
 
         beta = self.rho(self.alpha)  # [n_topics, n_genes]
         if self.batch_removal:
@@ -933,19 +849,22 @@ class scETM(nn.Module):
             recon_logit += self.gene_bias[data_dict['batch_indices']]
         # recon_logit = torch.mm(theta, F.softmax(self.beta, dim=-1))
         fwd_dict = dict(
-            nll=(-F.log_softmax(recon_logit, dim=-1) * ((cells * library_size) if self.norm_cells and not self.normed_loss else cells)).sum(-1).mean(),
+            nll=(-F.log_softmax(recon_logit, dim=-1) * self.mask_gene_expression(normed_cells if self.normed_loss else cells)).sum(-1).mean(),
             # nll=((F.softmax(recon_logit, dim=-1) - ((cells / library_size) if not self.norm_cells else cells)) ** 2).sum(-1).mean(),
             # nll=(-recon_logit.log() * cells).sum(-1).mean(),
             kl_delta=get_kl(mu_q_delta, logsigma_q_delta).mean(),
             theta=theta,
             delta=delta
         )
+        if self.supervised:
+            fwd_dict['cross_ent'] = F.cross_entropy(cell_type_logit, data_dict['cell_type_indices']).mean()
+        
         return fwd_dict
 
     def get_cell_type(self, cell_gene_sampler, adata=None, args=None, hard_accum=False):
         self.eval()
         weights = self.get_cell_emb_weights()
-        p_cell_type = weights['theta'].argmax(-1)
+        p_cell_type = weights['delta'].argmax(-1)
 
         adata.obsm['delta'] = weights['delta']
         sc.pp.neighbors(adata, n_neighbors=args.n_neighbors, use_rep='delta')
@@ -960,38 +879,28 @@ class scETM(nn.Module):
         nll, kl_delta = fwd_dict['nll'], fwd_dict['kl_delta']
         loss = nll + hyper_param_dict['beta'] * kl_delta
         new_items = dict(nll=nll, kl_delta=kl_delta)
-
-        loss, new_items = get_gg_cc_loss(
-            self, fwd_dict, data_dict, hyper_param_dict, loss, new_items)
+        if self.supervised:
+            cross_ent = fwd_dict['cross_ent']
+            loss += hyper_param_dict['supervised_weight'] * cross_ent
+            new_items['cross_ent'] = cross_ent
         return loss, new_items
 
 
-class NewModel(nn.Module):
+class NewModel(BaseCellModel):
     def __init__(self, adata: anndata.AnnData, args,
                  device=torch.device(
                      "cuda:0" if torch.cuda.is_available() else "cpu")):
-        super().__init__()
+        super().__init__(adata, args)
 
         args.neg_samples = 0
         args.cell_sampling = True
 
-        self.emb_dim = args.emb_dim
-        self.n_labels = args.n_labels
         self.n_topics = args.n_topics 
-        self.device = device
-        self.n_cells = adata.n_obs
-        self.n_genes = adata.n_vars
-        self.n_batches = adata.obs.batch_indices.nunique()
-        self.batch_size = args.batch_size
-        self.neg_samples = args.neg_samples
-        self.eval_batches = args.eval_batches
-        self.encoder_depth = args.encoder_depth
-        self.decoder_depth = args.decoder_depth
         self.batch_removal = args.max_lambda > 0
         self.cell_batch_scaling = args.cell_batch_scaling
         self.norm_cells = args.norm_cells
+        self.normed_loss = args.normed_loss
         self.library_size = adata.X.sum(1, keepdims=True)
-        self.X = (adata.X / self.library_size) if self.norm_cells else adata.X
         self.batch_indices = adata.obs.batch_indices.astype(int)
 
         self.E_result = None
@@ -1046,42 +955,18 @@ class NewModel(nn.Module):
         return w_batch_id
 
     def get_cell_emb_weights(self):
-        if self.n_cells > self.batch_size:
-            thetas, deltas = [], []
-            for start in range(0, self.n_cells, self.batch_size):
-                cells = torch.FloatTensor(self.X[start: start + self.batch_size]).to(self.device)
-                library_size = torch.FloatTensor(self.library_size[start: start + self.batch_size]).to(self.device)
-                data_dict = dict(cells=cells, library_size=library_size,
-                    cell_indices=torch.arange(start, min(start + self.batch_size, self.n_cells), device=self.device))
-                if self.batch_removal or self.cell_batch_scaling:
-                    batch_indices = torch.LongTensor(self.batch_indices[start: start + self.batch_size]).to(self.device)
-                    data_dict['batch_indices'] = batch_indices
-                fwd_dict = self(data_dict, hyper_param_dict=dict(val=True))
-                thetas.append(fwd_dict['theta'].detach().cpu())
-                deltas.append(fwd_dict['delta'].detach().cpu())
-            theta = torch.cat(thetas, dim=0).numpy()
-            delta = torch.cat(deltas, dim=0).numpy()
-        else:
-            cells = torch.FloatTensor(self.X).to(self.device)
-            library_size = torch.FloatTensor(self.library_size).to(self.device)
-            data_dict = dict(cells=cells, library_size=library_size, cell_indices=torch.arange(self.n_cells, device=self.device))
-            if self.batch_removal or self.cell_batch_scaling:
-                batch_indices = torch.LongTensor(self.batch_indices).to(self.device)
-                data_dict['batch_indices'] = batch_indices
-            fwd_dict = self(data_dict, hyper_param_dict=dict(val=True))
-            theta = fwd_dict['theta'].detach().cpu().numpy()
-            delta = fwd_dict['delta'].detach().cpu().numpy()
-        return {'theta': theta, 'delta': delta}
+        return super().get_cell_emb_weights(['theta', 'delta'])
 
     def forward(self, data_dict, hyper_param_dict=dict(E=False)):
         cells, library_size = data_dict['cells'], data_dict['library_size']
+        norm_cells = cells / library_size if self.norm_cells else cells
         batch_size = cells.shape[0]
         
         if self.batch_removal:
             batch_indices_oh = self._get_batch_indices_oh(data_dict)
-            q_delta = self.q_delta(torch.cat((cells, batch_indices_oh), dim=1))
+            q_delta = self.q_delta(torch.cat((norm_cells, batch_indices_oh), dim=1))
         else:
-            q_delta = self.q_delta(cells)
+            q_delta = self.q_delta(norm_cells)
         mu_q_delta = self.mu_q_delta(q_delta)
         logsigma_q_delta = self.logsigma_q_delta(q_delta).clamp_(self.min_logsigma, self.max_logsigma)
         p_delta = Independent(Normal(
@@ -1105,7 +990,7 @@ class NewModel(nn.Module):
         log_theta = F.log_softmax(delta, dim=-1).unsqueeze(1)
         # [batch_size, n_genes, n_topics]
         log_pz_d = log_theta
-        log_px_z = log_beta.unsqueeze(0) * ((cells * library_size) if self.norm_cells else cells).unsqueeze(2) # TODO: softmax
+        log_px_z = log_beta.unsqueeze(0) * (norm_cells if self.normed_loss else cells).unsqueeze(2) # TODO: softmax
         log_pzx_d = log_pz_d + log_px_z
         if hyper_param_dict['E']:
             pz_dx = F.softmax(log_pzx_d, dim=-1)
@@ -1148,6 +1033,157 @@ class NewModel(nn.Module):
                 fwd_dict, data_dict, hyper_param_dict)
             loss = loss + hyper_param_dict['epsilon'] * BCE_gene_LINE
             new_items['Llg'] = BCE_gene_LINE
+
+        loss, new_items = get_gg_cc_loss(
+            self, fwd_dict, data_dict, hyper_param_dict, loss, new_items)
+        return loss, new_items
+
+
+class scETMMultiDecoder(BaseCellModel):
+    def __init__(self, adata: anndata.AnnData, args,
+                 device=torch.device(
+                     "cuda:0" if torch.cuda.is_available() else "cpu")):
+        super().__init__(adata, args)
+
+        args.neg_samples = 0
+        args.cell_sampling = True
+        args.tracked_metric = "l_nmi"
+        # args.always_draw = ('cell_types', 'leiden', 'p', 'batch_indices')
+
+        self.n_topics = args.n_topics 
+        self.normed_loss = args.normed_loss
+        self.batch_removal = args.max_lambda > 0
+        self.norm_cells = args.norm_cells
+        self.cell_batch_scaling = args.cell_batch_scaling
+        self.group_by = args.group_by
+        self.is_sparse = isinstance(adata.X, csr_matrix)
+        if self.is_sparse:
+            self.library_size = adata.X.sum(1)
+        else:
+            self.library_size = adata.X.sum(1, keepdims=True)
+        self.batch_indices = adata.obs.batch_indices.astype(int)
+ 
+        self.q_delta = nn.Sequential(
+            nn.Linear(self.n_genes + ((self.n_batches - 1) if self.batch_removal else 0), self.emb_dim * 2),
+            nn.ReLU(),
+            nn.BatchNorm1d(self.emb_dim * 2),
+            nn.Dropout(0.1),
+            nn.Linear(self.emb_dim * 2, self.emb_dim),
+            nn.ReLU(),
+            nn.BatchNorm1d(self.emb_dim),
+            nn.Dropout(0.1)
+        )
+        self.mu_q_delta = nn.Linear(self.emb_dim, self.n_topics, bias=True)
+        self.logsigma_q_delta = nn.Linear(self.emb_dim, self.n_topics, bias=True)
+
+        self.n_groups = adata.obs[self.group_by].nunique()
+        self.group_col = torch.LongTensor(adata.obs[self.group_by].values.codes.copy()).to(device)
+        self.beta = [nn.Linear(self.n_topics + ((self.n_batches - 1) if self.batch_removal else 0), self.n_genes, bias=False) for _ in range(self.n_groups)]
+        for i, module in enumerate(self.beta):
+            self.add_module(f'beta_{i}', module)
+
+        if self.cell_batch_scaling:
+            # self.cell_bias = nn.Parameter(torch.ones(self.n_cells, 1))
+            self.gene_bias = [nn.Parameter(torch.randn(self.n_batches, self.n_genes)) for _ in range(self.n_groups)]
+            for i, module in enumerate(self.gene_bias):
+                self.register_parameter(f'gene_bias_{i}', module)
+
+        ## cap log variance within [-10, 10]
+        self.max_logsigma = 10
+        self.min_logsigma = -10
+
+        # self.init_emb()
+
+    @staticmethod
+    def _init_emb(emb):
+        if isinstance(emb, nn.Linear):
+            nn.init.xavier_uniform_(emb.weight.data)
+            if emb.bias is not None:
+                emb.bias.data.fill_(0.0)
+        elif isinstance(emb, nn.Sequential):
+            for child in emb:
+                scETMMultiDecoder._init_emb(child)
+
+    def init_emb(self):
+        for m in self.modules():
+            self._init_emb(m)
+
+    def _get_batch_indices_oh(self, data_dict):
+        if 'batch_indices_oh' in data_dict:
+            w_batch_id = data_dict['batch_indices_oh']
+        else:
+            batch_indices = data_dict['batch_indices'].unsqueeze(1)
+            w_batch_id = torch.zeros((batch_indices.shape[0], self.n_batches), dtype=torch.float32, device=self.device)
+            w_batch_id.scatter_(1, batch_indices, 1.)
+            w_batch_id = w_batch_id[:, :self.n_batches - 1]
+            data_dict['batch_indices_oh'] = w_batch_id
+        return w_batch_id
+
+    def get_cell_emb_weights(self):
+        return super().get_cell_emb_weights(['theta', 'delta'])
+
+    def forward(self, data_dict, hyper_param_dict=dict(E=True)):
+        cells, library_size = data_dict['cells'], data_dict['library_size']
+        normed_cells = cells / library_size if self.norm_cells else cells
+        batch_size = cells.shape[0]
+        cell_indices = data_dict['cell_indices']
+        
+        q_delta = self.q_delta(normed_cells)
+        mu_q_delta = self.mu_q_delta(q_delta)
+
+        if 'val' in hyper_param_dict:
+            return dict(theta=F.softmax(mu_q_delta, dim=-1), delta=mu_q_delta)
+
+        logsigma_q_delta = self.logsigma_q_delta(q_delta).clamp(self.min_logsigma, self.max_logsigma)
+        q_delta = Independent(Normal(
+            loc=mu_q_delta,
+            scale=logsigma_q_delta.exp()
+        ), 1)
+
+        delta = q_delta.rsample()
+        theta = F.softmax(delta, dim=-1)  # [batch_size, n_topics]
+
+        # beta = self.rho(self.alpha)  # [n_topics, n_genes]
+        if self.batch_removal:
+            new_theta = torch.cat((theta, self._get_batch_indices_oh(data_dict)), dim=1)
+        else:
+            new_theta = theta
+
+        recon_logit = torch.zeros(self.batch_size, self.n_genes, device=self.device, dtype=torch.float32)
+        for i in range(self.n_groups):
+            indices = self.group_col[cell_indices] == i
+            recon_logit[indices] = self.beta[i](new_theta[indices])
+            if self.cell_batch_scaling:
+                recon_logit[indices] += self.gene_bias[i][data_dict['batch_indices'][indices]]
+        
+        fwd_dict = dict(
+            nll=(-F.log_softmax(recon_logit, dim=-1) * (norm_cells if self.normed_loss else cells)).sum(-1).mean(),
+            # nll=((F.softmax(recon_logit, dim=-1) - ((cells / library_size) if not self.norm_cells else cells)) ** 2).sum(-1).mean(),
+            # nll=(-recon_logit.log() * cells).sum(-1).mean(),
+            kl_delta=get_kl(mu_q_delta, logsigma_q_delta).mean(),
+            theta=theta,
+            delta=delta
+        )
+        return fwd_dict
+
+    def get_cell_type(self, cell_gene_sampler, adata=None, args=None, hard_accum=False):
+        self.eval()
+        weights = self.get_cell_emb_weights()
+        p_cell_type = weights['theta'].argmax(-1)
+
+        adata.obsm['delta'] = weights['delta']
+        sc.pp.neighbors(adata, n_neighbors=args.n_neighbors, use_rep='delta')
+        result = dict(
+            p_cell_type=p_cell_type,
+            ouvain_cell_type=get_louvain_type(self, adata, args, use_rep='delta'),
+            leiden_cell_type=get_leiden_type(self, adata, args, use_rep='delta')
+        )
+        return result
+
+    def get_loss(self, fwd_dict, data_dict, hyper_param_dict):
+        nll, kl_delta = fwd_dict['nll'], fwd_dict['kl_delta']
+        loss = nll + hyper_param_dict['beta'] * kl_delta
+        new_items = dict(nll=nll, kl_delta=kl_delta)
 
         loss, new_items = get_gg_cc_loss(
             self, fwd_dict, data_dict, hyper_param_dict, loss, new_items)
@@ -1245,10 +1281,11 @@ def get_louvain_type(model, adata, args, use_rep='w_cell_emb'):
 
     aris.sort(key=lambda x: x[2])
     n_labels = adata.obs.cell_types.nunique()
-    if aris[1][2] < n_labels / 2 and aris[-1][2] <= n_labels:
-        args.louvain_resolutions = [res + 0.05 for res in args.louvain_resolutions]
-    elif aris[-1][2] > n_labels:
-        args.louvain_resolutions = [res - min(0.1, min(args.louvain_resolutions) / 2) for res in args.louvain_resolutions]
+    if len(aris) > 2:
+        if aris[1][2] < n_labels / 2 and aris[-1][2] <= n_labels:
+            args.louvain_resolutions = [res + 0.05 for res in args.louvain_resolutions]
+        elif aris[-1][2] > n_labels and args.louvain_resolutions[0] > 0.01:
+            args.louvain_resolutions = [res - min(0.1, min(args.louvain_resolutions) / 2) for res in args.louvain_resolutions]
  
     return adata.obs[f'louvain_{best_res}'].astype(int)
 
@@ -1271,10 +1308,11 @@ def get_leiden_type(model, adata, args, use_rep='w_cell_emb'):
 
     aris.sort(key=lambda x: x[2])
     n_labels = adata.obs.cell_types.nunique()
-    if aris[1][2] < n_labels / 2 and aris[-1][2] <= n_labels:
-        args.leiden_resolutions = [res + 0.05 for res in args.leiden_resolutions]
-    elif aris[-1][2] > n_labels:
-        args.leiden_resolutions = [res - min(0.1, min(args.leiden_resolutions) / 2) for res in args.leiden_resolutions]
+    if len(aris) > 2:
+        if aris[1][2] < n_labels / 2 and aris[-1][2] <= n_labels:
+            args.leiden_resolutions = [res + 0.05 for res in args.leiden_resolutions]
+        elif aris[-1][2] > n_labels and args.leiden_resolutions[0] > 0.01:
+            args.leiden_resolutions = [res - min(0.1, min(args.leiden_resolutions) / 2) for res in args.leiden_resolutions]
 
     return adata.obs[f'leiden_{best_res}'].astype(int)
 
