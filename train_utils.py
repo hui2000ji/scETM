@@ -11,30 +11,17 @@ from sklearn.metrics import adjusted_rand_score, adjusted_mutual_info_score, \
     normalized_mutual_info_score
 from sklearn.neighbors import NearestNeighbors
 
-def get_train_instance_name(args, adata: anndata.AnnData):
+def get_train_instance_name(args):
     strs = [
         args.dataset_str,
         args.model]
     for tuple_ in (
-            ('nLabels', args.n_labels, adata.obs.cell_types.nunique()),
             ('nTopics', args.n_topics, 100),
-            ('clip', args.clip),
-            ('scale', args.scale),
             ('lr', args.lr, 2e-2),
-            ('beta', args.max_beta, 1.),
-            ('minBeta', args.min_beta),
-            ('gamma', args.max_gamma),
-            ('delta', args.max_delta),
-            ('epsilon', args.max_epsilon),
-            ('zeta', args.max_zeta),
-            ('eta', args.max_eta),
-            ('lambda', args.max_lambda),
-            ('cycBeta', args.cyclic_anneal),
-            ('linBeta', args.linear_anneal, 2400),
-            ('linEpsilon', args.linear_anneal_epsilon),
-            ('linEta', args.linear_anneal_eta, 2400),
-            ('negSmpls', args.neg_samples),
-            ('negWeight', args.neg_weight, 1.),
+            ('maxKLWeight', args.max_kl_weight, 1.),
+            ('minKLWeight', args.min_kl_weight),
+            ('KLWeightAnneal', args.kl_weight_anneal, 300),
+            ('inputBatchID', args.input_batch_id),
             ('maskRatio', args.mask_ratio, 0.2),
             ('supervised', args.max_supervised_weight, 0.)
     ):
@@ -46,12 +33,11 @@ def get_train_instance_name(args, adata: anndata.AnnData):
         if numeric_ != default:
             strs.append('%s%g' % (name, numeric_))
     for name, bool_ in (
-            ('gumbel', args.gumbel),
             ('qn', args.quantile_norm),
             ('log1p', args.log1p),
             ('normRdCnt', args.norm_cell_read_counts),
             (args.log_str, args.log_str),
-            ('cellBatchScaling', args.cell_batch_scaling),
+            ('batchScaling', args.batch_scaling),
             ('normCells', args.norm_cells),
             ('normedLoss', args.normed_loss)
     ):
@@ -75,98 +61,70 @@ def logging(logging_items, ckpt_dir, time_str=None):
     return str
 
 
-def get_beta(args, step):
-    if args.cyclic_anneal:
-        cycle_len = args.cyclic_anneal
-        idx_in_cycle = step % cycle_len
-        beta = max(min(1., idx_in_cycle / (cycle_len * 0.6))
-                   * args.max_beta, args.min_beta)
-    elif args.linear_anneal:
-        beta = max(min(1., step / args.linear_anneal)
-                   * args.max_beta, args.min_beta)
+def get_kl_weight(args, epoch):
+    if args.kl_weight_anneal:
+        kl_weight = max(min(1., epoch / args.kl_weight_anneal)
+                   * args.max_kl_weight, args.min_kl_weight)
     else:
-        beta = args.max_beta
-    return beta
+        kl_weight = args.max_kl_weight
+    return kl_weight
 
 
-def get_eta(args, step):
-    if args.linear_anneal_eta:
-        eta = min(1., step / args.linear_anneal_eta) * args.max_eta
-    else:
-        eta = args.max_eta
-    return eta
-
-
-def get_epsilon(args, step):
-    if args.linear_anneal_epsilon:
-        epsilon = min(1., step / args.linear_anneal_epsilon) * args.max_epsilon
-    else:
-        epsilon = args.max_epsilon
-    return epsilon
-
-
-def get_logging_items(embeddings, step, lr, gumbel_tau, args, adata,
-                      tracked_items, tracked_metric, cell_types):
+def get_logging_items(embeddings, epoch, lr, args, adata,
+                      tracked_items, tracked_metric, cell_types, metadata):
     print('Evaluating and logging...', flush=True, end='\r')
-    items = [('step', '%7d' % step)]
-    if args.gumbel:
-        items.add(('gumbel', '%6.4f' % gumbel_tau))
+    items = [('epoch', '%7d' % epoch)]
     if args.lr_decay < 1.:
         items.append(('lr', '%7.2e' % lr))
     for key, val in tracked_items.items():
         items.append((key, '%7.4f' % np.mean(val)))
     for cell_type_key in cell_types:
-        if cell_type_key.endswith('cell_type'):
-            prefix = cell_type_key[0]
-            cell_type = cell_types[cell_type_key]
-            tracked_metric['%c_lbl' % prefix][step] = \
-                [(cell_type == label).sum() for label in np.unique(cell_type)]
-            tracked_metric['%c_nmi' % prefix][step] = \
-                normalized_mutual_info_score(adata.obs.cell_types, cell_type)
-            tracked_metric['%c_ari' % prefix][step] = \
-                adjusted_rand_score(adata.obs.cell_types, cell_type)
-            tracked_metric['%c_ami' % prefix][step] = \
-                adjusted_mutual_info_score(adata.obs.cell_types, cell_type)
-            items.extend([
-                ('%c_lbl' % prefix, str(
-                    tracked_metric['%c_lbl' % prefix][step])),
-                ('%c_nmi' % prefix, '%7.4f' %
-                    tracked_metric['%c_nmi' % prefix][step]),
-                ('%c_ari' % prefix, '%7.4f' %
-                    tracked_metric['%c_ari' % prefix][step]),
-                ('%c_ami' % prefix, '%7.4f' %
-                    tracked_metric['%c_ami' % prefix][step]),
-            ])
-            if adata.obs.batch_indices.nunique() > 1:
-                items.append((f'{prefix}_bARI', '%7.4f' %
-                    adjusted_rand_score(adata.obs.batch_indices, cell_type)))
-        elif cell_type_key.endswith('gene_type'):
-            prefix = cell_type_key[0]
-            gene_type = cell_types[cell_type_key]
-            items.append(('%cG_lbl' % prefix, str(
-                [(gene_type == i).sum() for i in range(args.n_labels)])))
-        else:
-            raise ValueError('Invalid cell type key ' + cell_type_key)
-    if adata.obs.batch_indices.nunique() > 1 and step == args.updates and not args.no_be:  # Only calc BE at last step
+        cell_type = cell_types[cell_type_key]
+        cell_type_key = cell_type_key.split('_')[0]
+        tracked_metric['%s_lbl' % cell_type_key][epoch] = \
+            [(cell_type == label).sum() for label in np.unique(cell_type)]
+        tracked_metric['%s_nmi' % cell_type_key][epoch] = \
+            normalized_mutual_info_score(adata.obs.cell_types, cell_type)
+        tracked_metric['%s_ari' % cell_type_key][epoch] = \
+            adjusted_rand_score(adata.obs.cell_types, cell_type)
+        # tracked_metric['%s_ami' % cell_type_key][epoch] = \
+        #     adjusted_mutual_info_score(adata.obs.cell_types, cell_type)
+        items.extend([
+            ('%s_lbl' % cell_type_key, str(
+                tracked_metric['%s_lbl' % cell_type_key][epoch])),
+            ('%s_nmi' % cell_type_key, '%7.4f' %
+                tracked_metric['%s_nmi' % cell_type_key][epoch]),
+            ('%s_ari' % cell_type_key, '%7.4f' %
+                tracked_metric['%s_ari' % cell_type_key][epoch]),
+            # ('%s_ami' % cell_type_key, '%7.4f' %
+            #     tracked_metric['%s_ami' % cell_type_key][epoch]),
+        ])
+        if adata.obs.batch_indices.nunique() > 1:
+            items.append((f'{cell_type_key}_bARI', '%7.4f' %
+                adjusted_rand_score(adata.obs.batch_indices, cell_type)))
+    if adata.obs.batch_indices.nunique() > 1 and epoch == args.n_epochs and not args.no_be:  # Only calc BE at last step
         for name, latent_space in embeddings.items():
             items.append((f'{name}_BE', '%7.4f' % 
                 entropy_batch_mixing(latent_space, adata.obs.batch_indices)))
+    for cluster_method, metadata_item in metadata.items():
+        for k, v in metadata_item.items():
+            items.append((f'{cluster_method}_{k}', '%8.5f' % v))
     # clear tracked_items    
     for key in tracked_items:
         tracked_items[key] = list()
     return items
 
 
-def draw_embeddings(adata: anndata.AnnData, step: int, args, cell_types: dict,
+def draw_embeddings(adata: anndata.AnnData, epoch: int, args, cell_types: dict,
                     embeddings: dict, train_instance_name: str, ckpt_dir: str,
-                    save: bool = True, show: bool = False):
+                    save: bool = True, show: bool = False, fname_postfix: str=''):
     print('Drawing embeddings...', flush=True, end='\r')
     cell_type_keys = []
     for cell_type_key in cell_types:
         if cell_type_key.endswith('cell_type'):
             prefix = cell_type_key.split('_')[0]
             cell_type = cell_types[cell_type_key]
-            if prefix in args.always_draw or step == args.updates:
+            if prefix in args.always_draw or epoch == args.n_epochs:
                 cell_type_keys.append(prefix)
                 adata.obs[prefix] = cell_type
                 adata.obs[prefix] = adata.obs[prefix].astype(
@@ -188,12 +146,22 @@ def draw_embeddings(adata: anndata.AnnData, step: int, args, cell_types: dict,
         if save:
             fig.savefig(
                 os.path.join(
-                    # ckpt_dir, f'{train_instance_name}_{emb_name}_step{step}.jpg'),
-                    ckpt_dir, f'{emb_name}_step{step}.png'),
+                    ckpt_dir, f'{emb_name}_epoch{epoch}{"_" + fname_postfix if fname_postfix else ""}.pdf'),
                 dpi=300, bbox_inches='tight'
             )
         fig.clf()
         plt.close(fig)
+
+
+def save_embeddings(model, embeddings, args):
+    save_dict = dict(
+        delta=embeddings['delta'],
+        rho=model.rho.weight.detach().cpu().numpy(),
+        alpha=model.alpha.detach().cpu().numpy()
+    )
+    import pickle
+    with open(os.path.join(args.ckpt_dir, 'embeddings.pkl'), 'wb') as f:
+        pickle.dump(save_dict, f)
 
 
 def _start_shell(local_ns):

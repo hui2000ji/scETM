@@ -39,6 +39,8 @@ parser.add_argument('--restore', action='store_true', help='whether to restore f
 parser.add_argument('--leiden-resolutions', type=float, nargs='*',
                     default=(0.01, 0.015, 0.02, 0.025, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.1, 0.15, 0.2),
                     help='resolutions at leiden clustering')
+parser.add_argument('--no-be', action='store_true', help='do not calculate batch mixing entropy')
+parser.add_argument('--n-epochs', type=int, default=400, help="number of epochs to train")
 args = parser.parse_args()
 
 from pathlib import Path
@@ -71,7 +73,7 @@ dataset = AnnDatasetFromAnnData(adata)
 
 from scvi.models import VAE, LDVAE
 from scvi.inference import UnsupervisedTrainer, load_posterior
-n_epochs = 400
+n_epochs = args.n_epochs
 lr = 1e-3
 use_cuda = True
 
@@ -80,6 +82,9 @@ if args.batch_removal:
     model = model_dict[args.model](dataset.nb_genes, n_batch=adata.obs.batch_indices.nunique())
 else:
     model = model_dict[args.model](dataset.nb_genes)
+
+if args.batch_removal:
+    args.model = args.model + 'batch'
 
 if args.restore:
     full = load_posterior(args.ckpt_dir, model=model, use_cuda=use_cuda)
@@ -104,7 +109,7 @@ latent, batch_indices, labels = full.sequential().get_latent()
 batch_indices = batch_indices.ravel()
 
 if 'batch_indices' in adata.obs:
-    adata.obs.batch_indcies = adata.obs.batch_indices.astype(str).astype('category')
+    adata.obs.batch_indices = adata.obs.batch_indices.astype(str).astype('category')
 
 sc.settings.figdir = args.ckpt_dir
 adata.obsm["X_scVI"] = latent
@@ -144,4 +149,5 @@ def entropy_batch_mixing(latent_space, batches, n_neighbors=50, n_pools=50, n_sa
             ]
         )
     return score / n_pools
-print(f'BE: {entropy_batch_mixing(latent, adata.obs.batch_indices)}')
+if not args.no_be:
+    print(f'BE: {entropy_batch_mixing(latent, adata.obs.batch_indices)}')

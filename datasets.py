@@ -60,21 +60,14 @@ def process_dataset(adata, args):
 
     adata.obs_names_make_unique()
 
-    if not args.n_labels:
-        args.n_labels = adata.obs.cell_types.nunique()
-    if not args.eval_batches:
-        args.eval_batches = int(np.round(3000000 / args.batch_size))
-
     if adata.obs.batch_indices.nunique() < 100:
         adata.obs.batch_indices = adata.obs.batch_indices.astype('str').astype('category')
     return adata
 
 
 class DatasetConfig:
-    def __init__(self, name, n_genes, n_labels, get_dataset):
+    def __init__(self, name, get_dataset):
         self.name = name
-        self.n_genes = n_genes
-        self.n_labels = n_labels
         self.get_dataset = lambda args: process_dataset(get_dataset(args), args)
 
 
@@ -100,15 +93,15 @@ def get_mouse_pancreas(args):
         return pickle.load(f).to_anndata()
 
 
-cortex_config = DatasetConfig("cortex", 558, 7, get_cortex)
-prefrontal_cortex_config = DatasetConfig("prefrontalCortex", 158, 16, lambda args:
+cortex_config = DatasetConfig("cortex", get_cortex)
+prefrontal_cortex_config = DatasetConfig("prefrontalCortex", lambda args:
                                          scvi.dataset.PreFrontalCortexStarmapDataset(save_path='../data/PreFrontalCortex'))
 tabula_muris_config = DatasetConfig(
-    "TM", 23433, 82, lambda args: load_tabula_muris(args))
+    "TM", lambda args: load_tabula_muris(args))
 HCL_adult_thyroid_config = DatasetConfig(
-    "HCLAdultThyroid", 24411, 8, get_HCL_adult_thyroid)
-TM_pancreas_config = DatasetConfig("TMPancreas", 23043, 9, get_TM_pancreas)
+    "HCLAdultThyroid", get_HCL_adult_thyroid)
+TM_pancreas_config = DatasetConfig("TMPancreas", get_TM_pancreas)
 mouse_pancreas_config = DatasetConfig(
-    "MousePancreas", 14878, 13, get_mouse_pancreas)
+    "MousePancreas", get_mouse_pancreas)
 available_datasets = dict(cortex=cortex_config, prefrontalCortex=prefrontal_cortex_config, TM=tabula_muris_config,
                           HCLAdultThyroid=HCL_adult_thyroid_config, TMPancreas=TM_pancreas_config, mousePancreas=mouse_pancreas_config)

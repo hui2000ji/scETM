@@ -70,7 +70,7 @@ ari <- ARI(mem, dataset@meta.data$cell_types)
 writeLines(sprintf("ARI: %.4f", ari))
 writeLines(sprintf("NMI: %.4f", nmi))
 
-pdf(sprintf("figures/BAMMSC_%d.pdf",  args$K), width = 16, height = 8)
+pdf(sprintf("figures/{fname}_BAMMSC_%d.pdf",  args$K), width = 16, height = 8)
 p1 <- DimPlot(dataset, reduction = "umap", group.by = "cell_types")
 p2 <- DimPlot(dataset, reduction = "umap", group.by = "BAMMSC")
 p1 + p2

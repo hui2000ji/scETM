@@ -402,7 +402,7 @@ if __name__ == '__main__':
     adata.obsm['latent'] = latent
     sc.pp.neighbors(adata, n_neighbors=15, use_rep="latent")
     for resolution in args.resolutions:
-        umap_and_leiden(adata, save_path=f'_{dataset_str}_scVAE_{resolution}.pdf', use_rep='latent', leiden_resolution=resolution)
+        umap_and_leiden(adata, save_path=f'_{dataset_str}_scVAE_resolution}.pdf', use_rep='latent', leiden_resolution=resolution)
         if adata.obs.leiden.nunique() > adata.obs.cell_types.nunique():
             break
     
