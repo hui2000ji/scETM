@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import shutil
+import psutil
 import pickle
 from pathlib import Path
 from glob import glob
@@ -19,14 +20,11 @@ from edgesampler import CellSampler, CellSamplerPool
 from train_utils import get_kl_weight, save_embeddings, \
     get_train_instance_name, logging, get_logging_items, draw_embeddings
 from datasets import available_datasets, process_dataset
-from my_parser import args
+from my_parser import parser
 from model import *
 
-sc.settings.set_figure_params(
-    dpi=120, dpi_save=250, facecolor='white', fontsize=10, figsize=(10, 10))
 
-
-def train(model: torch.nn.Module, adata: anndata.AnnData, args,
+def train(model: torch.nn.Module, adata: anndata.AnnData, args, step=0, epoch=0,
           device=torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')):
 
     # Samplers
@@ -37,45 +35,23 @@ def train(model: torch.nn.Module, adata: anndata.AnnData, args,
     samplers = [cell_gene_sampler]
     for sampler in samplers:
         sampler.start()
-
-    # set up step and epoch
-    steps_per_epoch = max(adata.n_obs / args.batch_size, 1)
-    if args.restore_step:
-        step = args.restore_step
-        epoch = step / steps_per_epoch
-    elif args.restore_epoch:
-        epoch = args.restore_epoch
-        step = epoch * steps_per_epoch
-    else:
-        step = epoch = 0
-
-    if (args.updates and args.updates / steps_per_epoch <= args.kl_weight_anneal * 0.75) or args.n_epochs <= args.kl_weight_anneal * 0.75:
-        args.kl_weight_anneal = epoch / 2
         
     # set up initial learning rate and optimizer
-    lr = args.lr * (np.exp(-args.lr_decay) ** step)
-    optimizer = optim.Adam(model.parameters(), lr=lr)
+    args.lr = args.lr * (np.exp(-args.lr_decay) ** step)
+    optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
     # restore model
     if args.restore_step:
-        model.load_state_dict(torch.load(os.path.join(
-            args.ckpt_dir, f'model-{args.restore_step}')))
         optimizer.load_state_dict(torch.load(os.path.join(
             args.ckpt_dir, f'opt-{args.restore_step}')))
-        print('Parameters restored.')
-        train_instance_name = Path(args.ckpt_dir).name
-        ckpt_dir = args.ckpt_dir
+        print('Optimizer restored.')
     elif args.restore_epoch:
-        model.load_state_dict(torch.load(os.path.join(
-            args.ckpt_dir, f'model-{args.restore_epoch}')))
         optimizer.load_state_dict(torch.load(os.path.join(
             args.ckpt_dir, f'opt-{args.restore_epoch}')))
-        print('Parameters restored.')
-        train_instance_name = Path(args.ckpt_dir).name
-        ckpt_dir = args.ckpt_dir
-    else:
-        train_instance_name = get_train_instance_name(args)
-        ckpt_dir = os.path.join(args.ckpt_dir, train_instance_name)
+        print('Optimizer restored.')
+
+    ckpt_dir = args.ckpt_dir
+    train_instance_name = Path(args.ckpt_dir).name
     next_ckpt_epoch = int(np.ceil(epoch / args.log_every) * args.log_every)
 
 
@@ -87,7 +63,7 @@ def train(model: torch.nn.Module, adata: anndata.AnnData, args,
     logging([
         ('ds', args.dataset_str),
         ('bs', args.batch_size),
-        ('lr', lr),
+        ('lr', args.lr),
         ('lr-decay', args.lr_decay),
         ('n_cells', adata.n_obs),
         ('n_genes', adata.n_vars),
@@ -104,6 +80,8 @@ def train(model: torch.nn.Module, adata: anndata.AnnData, args,
     tracked_metric = defaultdict(dict)
 
     cell_types = None
+    start_time = time.time()
+    start_epoch = epoch
     try:
         while epoch < args.n_epochs:
             print(f'Training: Epoch {int(epoch):5d}/{args.n_epochs:5d}\tNext ckpt: {next_ckpt_epoch:7d}', end='\r')
@@ -134,28 +112,20 @@ def train(model: torch.nn.Module, adata: anndata.AnnData, args,
 
             step += 1
             if args.lr_decay:
-                lr = lr * np.exp(-args.lr_decay)
+                args.lr = args.lr * np.exp(-args.lr_decay)
                 for param_group in optimizer.param_groups:
-                    param_group['lr'] = lr
+                    param_group['lr'] = args.lr
             epoch = step / steps_per_epoch
 
             # eval
             if not args.no_eval and (epoch >= next_ckpt_epoch or step == args.updates or epoch >= args.n_epochs):
-                print(time.strftime('%m_%d-%H_%M_%S') + ' ' * 20)
+                duration = time.time() - start_time
+                logging(f'Took {duration:.1f} seconds ({duration / 60:.1f} minutes) to train {epoch - start_epoch:.1f} epochs.', args.ckpt_dir)
+                mem_info = psutil.Process().memory_info()
+                logging(repr(mem_info), args.ckpt_dir)
 
-                model.eval()
-                cell_types, metadata = model.get_cell_type(cell_gene_sampler, adata, args)
-
-                # display log and save embedding visualization
-                embeddings = model.get_cell_emb_weights()
-                logging_items = get_logging_items(
-                    embeddings, next_ckpt_epoch, lr, args, adata,
-                    tracked_items, tracked_metric, cell_types, metadata)
-                logging(logging_items, ckpt_dir)
-                draw_embeddings(
-                    adata=adata, epoch=next_ckpt_epoch, args=args, cell_types=cell_types,
-                    embeddings=embeddings,
-                    train_instance_name=train_instance_name, ckpt_dir=ckpt_dir)
+                evaluate(model, adata, args, step, next_ckpt_epoch, args.save_embeddings and epoch >= args.n_epochs,
+                         tracked_items, tracked_metric)
 
                 # checkpointing
                 torch.save(model.state_dict(), os.path.join(
@@ -164,6 +134,8 @@ def train(model: torch.nn.Module, adata: anndata.AnnData, args,
                            os.path.join(ckpt_dir, f'opt-{next_ckpt_epoch}'))
 
                 next_ckpt_epoch += args.log_every
+                start_time = time.time()
+                start_epoch = epoch
 
         print("Optimization Finished: %s" % ckpt_dir)
     except:
@@ -205,52 +177,30 @@ def train(model: torch.nn.Module, adata: anndata.AnnData, args,
                 traceback.print_exc()
 
 
-def evaluate(model: torch.nn.Module, adata: anndata.AnnData, args):
-    steps_per_epoch = max(adata.n_obs / args.batch_size, 1)
-    if args.restore_step:
-        step = args.restore_step
-        epoch = step / steps_per_epoch
-    elif args.restore_epoch:
-        epoch = args.restore_epoch
-        step = epoch * steps_per_epoch
-    else:
-        raise ValueError('Must specify step to restore')
-
-    lr = args.lr * (np.exp(-args.lr_decay) ** step)
-
-    if args.restore_step:
-        model.load_state_dict(torch.load(os.path.join(
-            args.ckpt_dir, f'model-{args.restore_step}')))
-        print('Parameters restored.')
-        train_instance_name = Path(args.ckpt_dir).name
-        ckpt_dir = args.ckpt_dir
-    elif args.restore_epoch:
-        model.load_state_dict(torch.load(os.path.join(
-            args.ckpt_dir, f'model-{args.restore_epoch}')))
-        print('Parameters restored.')
-        train_instance_name = Path(args.ckpt_dir).name
-        ckpt_dir = args.ckpt_dir
-    else:
-        raise ValueError('Must specify checkpoint directory')
-
+def evaluate(model: torch.nn.Module, adata: anndata.AnnData, args, step, epoch,
+             save_emb=False, tracked_items=defaultdict(list), tracked_metric=defaultdict(dict)):
     model.eval()
     cell_types, metadata = model.get_cell_type(None, adata, args)
 
     # display log and save embedding visualization
     embeddings = model.get_cell_emb_weights()
     logging_items = get_logging_items(
-        embeddings, int(epoch), lr, args, adata,
-        defaultdict(list), defaultdict(dict), cell_types, metadata)
-    save_embeddings(model, embeddings, args)
+        embeddings, int(epoch), args, adata,
+        tracked_items, tracked_metric, cell_types, metadata)
+    if save_emb:
+        save_embeddings(model, embeddings, args)
     draw_embeddings(
         adata=adata, epoch=int(epoch), args=args, cell_types=cell_types,
-        embeddings=embeddings, train_instance_name=train_instance_name,
-        ckpt_dir=ckpt_dir, fname_postfix="eval")
-    logging(logging_items, ckpt_dir)
+        embeddings=embeddings, train_instance_name=Path(args.ckpt_dir).name,
+        ckpt_dir=args.ckpt_dir, fname_postfix="eval")
+    logging(logging_items, args.ckpt_dir)
 
 
 if __name__ == '__main__':
+    args = parser.parse_args()
     matplotlib.use('Agg')
+    sc.settings.set_figure_params(
+        dpi=args.dpi_show, dpi_save=args.dpi_save, facecolor='white', fontsize=args.fontsize, figsize=args.figsize)
     if args.seed >= 0:
         torch.manual_seed(args.seed)
         torch.backends.cudnn.deterministic = True
@@ -265,18 +215,6 @@ if __name__ == '__main__':
         with open(args.anndata_path, 'rb') as f:
             adata = pickle.load(f)
         args.dataset_str = Path(args.anndata_path).stem
-    elif args.dataframe_path:
-        import pickle
-        with open(args.dataframe_path, 'rb') as f:
-            df = pickle.load(f)
-            df.reset_index(drop=True, inplace=True)
-        annotations = ['batch_id', 'cell_id', 'cell_type']
-        if 'barcode' in df.columns:
-            annotations.append('barcode')
-        df_anno = df[annotations]
-        df.drop(annotations, axis=1, inplace=True)
-        adata = anndata.AnnData(X=df, obs=df_anno)
-        args.dataset_str = Path(args.dataframe_path).stem
     else:
         adata = available_datasets[args.dataset_str].get_dataset(args)
     adata = process_dataset(adata, args)
@@ -285,14 +223,43 @@ if __name__ == '__main__':
         MixtureOfMultinomial=MixtureOfMultinomial,
         MixtureOfZINB=MixtureOfZINB,
         scETM=scETM,
-        scETMMultiDecoder=scETMMultiDecoder
+        scETMMultiDecoder=scETMMultiDecoder,
+        SupervisedClassifier=SupervisedClassifier
     )
     Model = model_dict[args.model]
     model = Model(adata, args)
     if torch.cuda.is_available():
         model = model.to(torch.device('cuda:0'))
     print([tuple(param.shape) for param in model.parameters()])
-    if args.eval:
-        evaluate(model, adata, args)
+
+    # set up step and epoch
+    steps_per_epoch = max(adata.n_obs / args.batch_size, 1)
+    if args.restore_step:
+        step = args.restore_step
+        epoch = step / steps_per_epoch
+    elif args.restore_epoch:
+        epoch = args.restore_epoch
+        step = epoch * steps_per_epoch
     else:
-        train(model, adata, args)
+        step = epoch = 0
+
+    if (args.updates and args.updates / steps_per_epoch <= args.kl_weight_anneal * 0.75) or args.n_epochs <= args.kl_weight_anneal * 0.75:
+        args.kl_weight_anneal = epoch / 2
+
+    # restore model
+    if args.restore_step:
+        model.load_state_dict(torch.load(os.path.join(
+            args.ckpt_dir, f'model-{args.restore_step}')))
+        print('Parameters restored.')
+    elif args.restore_epoch:
+        model.load_state_dict(torch.load(os.path.join(
+            args.ckpt_dir, f'model-{args.restore_epoch}')))
+        print('Parameters restored.')
+    else:
+        train_instance_name = get_train_instance_name(args)
+        args.ckpt_dir = os.path.join(args.ckpt_dir, train_instance_name)
+
+    if args.eval:
+        evaluate(model, adata, args, step, epoch, args.save_embeddings)
+    else:
+        train(model, adata, args, step, epoch)

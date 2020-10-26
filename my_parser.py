@@ -7,8 +7,8 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--eval', action='store_true', help='eval mode')
 
 # Model parameters
-parser.add_argument('--model', type=str, default='scETM', help="models used")
-parser.add_argument('--hidden-sizes', type=int, nargs='+', default=(256, 128), help='Hidden sizes of theencoder')
+parser.add_argument('--model', type=str, default='scETM', help="model name")
+parser.add_argument('--hidden-sizes', type=int, nargs='+', default=(256, 128), help='Hidden sizes of the encoder')
 parser.add_argument('--dropout-prob', type=float, default=0.1, help='Dropout rate (1 - keep probability).')
 parser.add_argument('--gene-emb-dim', type=int, default=300, help='gene embedding dimensions')
 parser.add_argument('--no-bn', action='store_true', help='Disable batch normalization')
@@ -16,6 +16,7 @@ parser.add_argument('--n-topics', type=int, default=100, help='number of topics 
 parser.add_argument('--norm-cells', action='store_true', help='normalize cell samples')
 parser.add_argument('--mask-ratio', type=float, default=0.2, help='random masking ratio of gene expression')
 parser.add_argument('--batch-scaling', action='store_true', help='enable cell- and batch-specific scaling')
+parser.add_argument('--group-by', type=str, default='condition', help='dataframe (adata.obs) column to group the cells by, used in scETMMultiDecoder')
 
 # Loss parameters
 parser.add_argument('--max-supervised-weight', type=float, default=0, help='weight of supervsied loss, 0 to turn off supervised components')
@@ -28,7 +29,7 @@ parser.add_argument('--normed-loss', action='store_true', help='whether to norma
 parser.add_argument('--seed', type=int, default=-1, help='Random seed')
 parser.add_argument('--n-epochs', type=int, default=800, help='Number of epochs to train')
 parser.add_argument('--updates', type=int, help="Number of updates to train (depracated)")
-parser.add_argument('--log-every', type=int, default=100, help='Number of epochs between loggings')
+parser.add_argument('--log-every', type=int, default=400, help='Number of epochs between loggings')
 parser.add_argument('--lr', type=float, default=0.02, help='Initial learning rate')
 parser.add_argument('--lr-decay', type=float, default=6e-5, help='Negative log of the learning rate decay rate')
 parser.add_argument('--batch-size', type=int, default=2000, help='Batch size for training')
@@ -42,11 +43,11 @@ parser.add_argument('--restore-step', type=int, help='step of the checkpoint you
 parser.add_argument('--restore-epoch', type=int, default=0, help='epoch number of the checkpoint you wish to restore')
 parser.add_argument('--ckpt-dir', type=str, default=os.path.join('..', 'results'), help='directory of checkpoints')
 parser.add_argument('--log-str', type=str, default='', help='additional string on ckpt dir name')
-parser.add_argument('--tracked-metric', type=str, default='l_nmi', help='metric to track for auto ckpt deletion')
+parser.add_argument('--tracked-metric', type=str, default='leiden_ari', help='metric to track for auto ckpt deletion')
+parser.add_argument('--save-embeddings', action='store_true', help='store cell, gene, topic embeddings after evaluation')
 
 # Dataset location parameters
 parser.add_argument('--dataset-str', type=str, default='cortex', help='dataset name')
-parser.add_argument('--dataframe-path', type=str, default='', help='path to pickled pandas dataframe')
 parser.add_argument('--anndata-path', type=str, default='', help='path to pickled Anndata object')
 parser.add_argument('--h5ad-path', type=str, default='', help='path to the h5ad file representing an Anndata object')
 
@@ -64,5 +65,7 @@ parser.add_argument('--min_dist', type=float, default=0.3, help='minimum distanc
 parser.add_argument('--spread', type=float, default=1., help='scale of the embedded points')
 parser.add_argument('--louvain-resolutions', type=float, nargs='*', default=(0.05, 0.1, 0.15, 0.2), help='resolution of louvain clustering')
 parser.add_argument('--leiden-resolutions', type=float, nargs='*', default=(0.05, 0.1, 0.15, 0.2), help='resolution of leiden clustering')
-parser.add_argument('--group-by', type=str, default='condition', help='dataframe (adata.obs) column to group the cells by, used in scETMMultiDecoder')
-args = parser.parse_args()
+parser.add_argument('--figsize', type=int, nargs=2, default=(10, 10), help='size of the plotted figure')
+parser.add_argument('--fontsize', type=int, default=10, help='font size in plotted figure')
+parser.add_argument('--dpi-show', type=int, default=120, help='Resolution of shown figures')
+parser.add_argument('--dpi-save', type=int, default=250, help='Resolution of saved figures')

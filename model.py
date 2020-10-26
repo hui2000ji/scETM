@@ -24,6 +24,8 @@ class BaseCellModel(nn.Module):
         self.n_cells = adata.n_obs
         self.n_genes = adata.n_vars
         self.n_batches = adata.obs.batch_indices.nunique()
+        self.batch_removal = args.input_batch_id
+        self.batch_scaling = args.batch_scaling
         self.batch_size = args.batch_size
         self.mask_ratio = args.mask_ratio
         if self.mask_ratio < 0 or self.mask_ratio > 0.5:
@@ -37,6 +39,7 @@ class BaseCellModel(nn.Module):
         else:
             self.library_size = adata.X.sum(1, keepdims=True)
         self.X = adata.X
+        self.batch_indices = adata.obs.batch_indices.astype(int)
 
     def mask_gene_expression(self, cells):
         if self.mask_ratio > 0:
@@ -45,6 +48,7 @@ class BaseCellModel(nn.Module):
             return cells
 
     def get_cell_emb_weights(self, weight_names):
+        self.eval()
         if isinstance(weight_names, str):
             weight_names = [weight_names]
 
@@ -79,6 +83,8 @@ class BaseCellModel(nn.Module):
 
     @staticmethod
     def get_fully_connected_layers(n_input, hidden_sizes, args):
+        if isinstance(hidden_sizes, int):
+            hidden_sizes = [hidden_sizes]
         layers = []
         for size in hidden_sizes:
             layers.append(nn.Linear(n_input, size))
@@ -241,15 +247,12 @@ class scETM(BaseCellModel):
 
         self.n_topics = args.n_topics
         self.normed_loss = args.normed_loss
-        self.batch_removal = args.input_batch_id
         self.norm_cells = args.norm_cells
-        self.batch_scaling = args.batch_scaling
         self.is_sparse = isinstance(adata.X, csr_matrix)
         if self.is_sparse:
             self.library_size = adata.X.sum(1)
         else:
-            self.library_size = adata.X.sum(1, keepdims=True)
-        self.batch_indices = adata.obs.batch_indices.astype(int)
+            self.library_size = adata.X.sum(1, keepdims=True) 
  
         self.q_delta = self.get_fully_connected_layers(
             n_input=self.n_genes + ((self.n_batches - 1) if self.batch_removal else 0),
@@ -264,10 +267,16 @@ class scETM(BaseCellModel):
         if self.supervised:
             self.cell_type_clf = self.get_fully_connected_layers(self.n_topics, self.n_labels, args)
 
-        self.rho = nn.Linear(self.gene_emb_dim, self.n_genes, bias=False)
+        # self.rho = nn.Linear(self.gene_emb_dim, self.n_genes, bias=False)
+        self.rho_fixed, self.rho = None, None
         if 'gene_emb' in adata.varm:
-            self.rho.weight = nn.Parameter(torch.FloatTensor(adata.varm['gene_emb']))
-        self.alpha = nn.Parameter(torch.randn(self.n_topics, self.gene_emb_dim))
+            self.rho_fixed = torch.FloatTensor(adata.varm['gene_emb'].T).to(device=device)
+            if self.gene_emb_dim:
+                self.rho = nn.Parameter(torch.randn(self.gene_emb_dim, self.n_genes))
+        else:
+            self.rho = nn.Parameter(torch.randn(self.gene_emb_dim, self.n_genes))
+
+        self.alpha = nn.Parameter(torch.randn(self.n_topics, self.gene_emb_dim + (adata.varm['gene_emb'].shape[1] if self.rho_fixed is not None else 0)))
         if self.batch_scaling:
             self.gene_bias = nn.Parameter(torch.randn(self.n_batches, self.n_genes))
 
@@ -309,6 +318,9 @@ class scETM(BaseCellModel):
         cells, library_size = data_dict['cells'], data_dict['library_size']
         normed_cells = cells / library_size if self.norm_cells else cells
         batch_size = cells.shape[0]
+
+        if self.batch_removal:
+            normed_cells = torch.cat((normed_cells, self._get_batch_indices_oh(data_dict)), dim=1)
         
         q_delta = self.q_delta(normed_cells)
         mu_q_delta = self.mu_q_delta(q_delta)
@@ -333,14 +345,13 @@ class scETM(BaseCellModel):
         if self.supervised:
             cell_type_logit = self.cell_type_clf(delta)
 
-        beta = self.rho(self.alpha)  # [n_topics, n_genes]
-        if self.batch_removal:
-            new_theta = torch.cat((theta, self._get_batch_indices_oh(data_dict)), dim=1)
-        else:
-            new_theta = theta
+        # beta = self.rho(self.alpha)  # [n_topics, n_genes]
+        rhos = [param for param in (self.rho_fixed, self.rho) if param is not None]
+        rho = torch.cat(rhos, dim=0) if len(rhos) > 1 else rhos[0]
+        beta = self.alpha @ rho
 
-        # recon_logit = self.beta(new_theta)  # [batch_size, n_genes]
-        recon_logit = torch.mm(new_theta, beta)  # [batch_size, n_genes]
+        # recon_logit = self.beta(theta)  # [batch_size, n_genes]
+        recon_logit = torch.mm(theta, beta)  # [batch_size, n_genes]
 
         if self.batch_scaling:
             # recon_logit += self.cell_bias[data_dict['cell_indices']] * self.gene_bias[data_dict['batch_indices']]
@@ -404,16 +415,13 @@ class scETMMultiDecoder(BaseCellModel):
 
         self.n_topics = args.n_topics 
         self.normed_loss = args.normed_loss
-        self.batch_removal = args.input_batch_id
         self.norm_cells = args.norm_cells
-        self.batch_scaling = args.batch_scaling
         self.group_by = args.group_by
         self.is_sparse = isinstance(adata.X, csr_matrix)
         if self.is_sparse:
             self.library_size = adata.X.sum(1)
         else:
             self.library_size = adata.X.sum(1, keepdims=True)
-        self.batch_indices = adata.obs.batch_indices.astype(int)
  
         self.q_delta = self.get_fully_connected_layers(
             n_input=self.n_genes + ((self.n_batches - 1) if self.batch_removal else 0),
@@ -540,6 +548,66 @@ class scETMMultiDecoder(BaseCellModel):
         tracked_items = dict(loss=loss, nll=nll, kl_delta=kl_delta)
         tracked_items = {k: v.detach().item() for k, v in tracked_items.items()}
         return loss, tracked_items
+
+
+class SupervisedClassifier(BaseCellModel):
+    def __init__(self, adata: anndata.AnnData, args,
+                 device=torch.device(
+                     "cuda:0" if torch.cuda.is_available() else "cpu")):
+        super().__init__(adata, args)
+        self.norm_cells = args.norm_cells
+        self.is_sparse = isinstance(adata.X, csr_matrix)
+        if self.is_sparse:
+            self.library_size = adata.X.sum(1)
+        else:
+            self.library_size = adata.X.sum(1, keepdims=True)
+        self.batch_indices = adata.obs.batch_indices.astype(int)
+        self.encoder = self.get_fully_connected_layers(
+            n_input=self.n_genes + ((self.n_batches - 1) if self.batch_removal else 0),
+            hidden_sizes=args.hidden_sizes,
+            args=args
+        )
+        hidden_dim = args.hidden_sizes[-1]
+        self.clf = nn.Linear(hidden_dim, self.n_labels, bias=True)
+    
+    def forward(self, data_dict, hyper_param_dict):
+        cells, library_size = data_dict['cells'], data_dict['library_size']
+        normed_cells = cells / library_size if self.norm_cells else cells
+        batch_size = cells.shape[0]
+        
+        embeddings = self.encoder(normed_cells)
+        logit = self.clf(embeddings)
+        return dict(logit=logit)
+    
+    def get_loss(self, fwd_dict, data_dict, hyper_param_dict):
+        logit = fwd_dict['logit']
+        cross_entropy = F.cross_entropy(logit, data_dict['cell_type_indices']).mean()
+        tracked_items = {'cross_ent': cross_entropy}
+        tracked_items = {k: v.detach().item() for k, v in tracked_items.items()}
+        return cross_entropy, tracked_items
+
+    def get_cell_emb_weights(self):
+        return super().get_cell_emb_weights(['logit'])
+
+    def get_cell_type(self, cell_gene_sampler, adata=None, args=None, hard_accum=False):
+        self.eval()
+        weights = self.get_cell_emb_weights()
+        p_cell_type = weights['logit'].argmax(-1)
+
+        adata.obsm['logit'] = weights['logit']
+        sc.pp.neighbors(adata, n_neighbors=args.n_neighbors, use_rep='logit')
+
+        louvain_cell_type, louvain_metadata = get_louvain_type(self, adata, args, use_rep='logit')
+        leiden_cell_type, leiden_metadata = get_leiden_type(self, adata, args, use_rep='logit')
+        result = dict(
+            p_cell_type=p_cell_type,
+            louvain_cell_type=louvain_cell_type,
+            leiden_cell_type=leiden_cell_type
+        )
+        return result, dict(
+            louvain=louvain_metadata,
+            leiden=leiden_metadata
+        )
 
 
 def get_louvain_type(model, adata, args, use_rep='w_cell_emb'):

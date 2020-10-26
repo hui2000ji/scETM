@@ -50,15 +50,17 @@ def get_train_instance_name(args):
 
 
 def logging(logging_items, ckpt_dir, time_str=None):
-    str = '; '.join(['{} {}'.format(key, val) for key, val in logging_items])
-    if time_str is None:
-        str = str + ' ' + time.strftime('%m-%d %H:%M:%S')
+    if not isinstance(logging_items, str):
+        logging_str = '; '.join(['{} {}'.format(key, val) for key, val in logging_items])
     else:
-        str = str + ' ' + time_str
+        logging_str = logging_items
+    if time_str is None:
+        time_str = time.strftime('%m-%d %H:%M:%S')
+    logging_str = logging_str + ' ' + time_str
     with open(os.path.join(ckpt_dir, 'log.txt'), 'a+') as f:
-        f.write(str + '\n')
-    print(str, flush=True)
-    return str
+        f.write(logging_str + '\n')
+    print(logging_str, flush=True)
+    return logging_str
 
 
 def get_kl_weight(args, epoch):
@@ -70,12 +72,12 @@ def get_kl_weight(args, epoch):
     return kl_weight
 
 
-def get_logging_items(embeddings, epoch, lr, args, adata,
+def get_logging_items(embeddings, epoch, args, adata,
                       tracked_items, tracked_metric, cell_types, metadata):
     print('Evaluating and logging...', flush=True, end='\r')
     items = [('epoch', '%7d' % epoch)]
     if args.lr_decay < 1.:
-        items.append(('lr', '%7.2e' % lr))
+        items.append(('lr', '%7.2e' % args.lr))
     for key, val in tracked_items.items():
         items.append((key, '%7.4f' % np.mean(val)))
     for cell_type_key in cell_types:
@@ -102,7 +104,9 @@ def get_logging_items(embeddings, epoch, lr, args, adata,
         if adata.obs.batch_indices.nunique() > 1:
             items.append((f'{cell_type_key}_bARI', '%7.4f' %
                 adjusted_rand_score(adata.obs.batch_indices, cell_type)))
-    if adata.obs.batch_indices.nunique() > 1 and epoch == args.n_epochs and not args.no_be:  # Only calc BE at last step
+    if adata.obs.batch_indices.nunique() > 1 and \
+            ((not args.eval and epoch == args.n_epochs) or (args.eval and epoch == args.restore_epoch)) and \
+            not args.no_be:  # Only calc BE at last step
         for name, latent_space in embeddings.items():
             items.append((f'{name}_BE', '%7.4f' % 
                 entropy_batch_mixing(latent_space, adata.obs.batch_indices)))
@@ -156,9 +160,12 @@ def draw_embeddings(adata: anndata.AnnData, epoch: int, args, cell_types: dict,
 def save_embeddings(model, embeddings, args):
     save_dict = dict(
         delta=embeddings['delta'],
-        rho=model.rho.weight.detach().cpu().numpy(),
         alpha=model.alpha.detach().cpu().numpy()
     )
+    if model.rho_fixed is not None:
+        save_dict['rho_fixed'] = model.rho_fixed.detach().cpu().numpy()
+    if model.rho is not None:
+        save_dict['rho'] = model.rho.detach().cpu().numpy()
     import pickle
     with open(os.path.join(args.ckpt_dir, 'embeddings.pkl'), 'wb') as f:
         pickle.dump(save_dict, f)
