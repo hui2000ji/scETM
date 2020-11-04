@@ -119,9 +119,8 @@ def get_logging_items(embeddings, epoch, args, adata,
     return items
 
 
-def draw_embeddings(adata: anndata.AnnData, epoch: int, args, cell_types: dict,
-                    embeddings: dict, train_instance_name: str, ckpt_dir: str,
-                    save: bool = True, show: bool = False, fname_postfix: str=''):
+def draw_embeddings(adata: anndata.AnnData, epoch: int, args, cell_types: dict, embeddings: dict,
+                    ckpt_dir: str, save: bool = True, show: bool = False, fname_postfix: str=''):
     print('Drawing embeddings...', flush=True, end='\r')
     cell_type_keys = []
     for cell_type_key in cell_types:
@@ -137,7 +136,7 @@ def draw_embeddings(adata: anndata.AnnData, epoch: int, args, cell_types: dict,
         cell_type_keys.append('batch_indices')
     cell_type_keys.append('cell_types')
     for key in args.always_draw:
-        if not key in cell_type_keys and key in adata.obs:
+        if key != 'batch_indices' and not key in cell_type_keys and key in adata.obs:
             cell_type_keys.append(key)
             adata.obs[key] = adata.obs[key].astype(
                 'str').astype('category')
@@ -157,13 +156,14 @@ def draw_embeddings(adata: anndata.AnnData, epoch: int, args, cell_types: dict,
         plt.close(fig)
 
 
-def save_embeddings(model, embeddings, args):
+def save_embeddings(model, adata, embeddings, args):
     save_dict = dict(
         delta=embeddings['delta'],
-        alpha=model.alpha.detach().cpu().numpy()
+        alpha=model.alpha.detach().cpu().numpy(),
+        gene_names=adata.var_names
     )
-    if model.rho_fixed is not None:
-        save_dict['rho_fixed'] = model.rho_fixed.detach().cpu().numpy()
+    # if model.rho_fixed is not None:
+    #     save_dict['rho_fixed'] = model.rho_fixed.detach().cpu().numpy()
     if model.rho is not None:
         save_dict['rho'] = model.rho.detach().cpu().numpy()
     import pickle

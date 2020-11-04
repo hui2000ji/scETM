@@ -2,11 +2,11 @@ import numpy as np
 import pandas as pd
 import scanpy as sc
 import anndata
+import psutil
 import matplotlib.pyplot as plt
 from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score
 import seaborn as sns
 sc.settings.verbosity = 3
-sc.logging.print_versions()
 sc.settings.set_figure_params(dpi=120, dpi_save=250, facecolor='white', fontsize=10, figsize=(10, 10))
 
 def umap_and_leiden(adata, save_path=False, use_rep=None,
@@ -41,6 +41,10 @@ parser.add_argument('--leiden-resolutions', type=float, nargs='*',
                     help='resolutions at leiden clustering')
 parser.add_argument('--no-be', action='store_true', help='do not calculate batch mixing entropy')
 parser.add_argument('--n-epochs', type=int, default=400, help="number of epochs to train")
+parser.add_argument('--n-layers', type=int, default=2, help='number of encoder and decoder (if any) layers')
+parser.add_argument('--n-hidden', type=int, default=128, help='hidden layer size')
+parser.add_argument('--n-latent', type=int, default=100, help='latent variable size')
+
 args = parser.parse_args()
 
 from pathlib import Path
@@ -78,10 +82,17 @@ lr = 1e-3
 use_cuda = True
 
 model_dict = dict(VAE=VAE, LDVAE=LDVAE)
-if args.batch_removal:
-    model = model_dict[args.model](dataset.nb_genes, n_batch=adata.obs.batch_indices.nunique())
+if args.model == 'VAE':
+    param_dict = dict(n_layers=args.n_layers)
 else:
-    model = model_dict[args.model](dataset.nb_genes)
+    param_dict = dict(n_layers_encoder=args.n_layers)
+model = model_dict[args.model](
+    dataset.nb_genes,
+    n_batch=adata.obs.batch_indices.nunique() if args.batch_removal else 0,
+    n_latent=args.n_latent,
+    n_hidden=args.n_hidden,
+    **param_dict
+)
 
 if args.batch_removal:
     args.model = args.model + 'batch'
@@ -107,6 +118,8 @@ else:
     
 latent, batch_indices, labels = full.sequential().get_latent()
 batch_indices = batch_indices.ravel()
+
+print(psutil.Process().memory_info())
 
 if 'batch_indices' in adata.obs:
     adata.obs.batch_indices = adata.obs.batch_indices.astype(str).astype('category')

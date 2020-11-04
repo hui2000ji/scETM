@@ -327,15 +327,16 @@ if __name__ == '__main__':
     parser.add_argument('--number-of-reconstruction-classes', type=int, default=0, help="the maximum count for which to use classification")
     parser.add_argument('--batch-removal', action='store_true', help="whether to add batch correction")
     parser.add_argument('--keep-probs', type=float, nargs='+', default=(1., 1., 1., 1.), help="dropout keep prob for h, x, z and y, respectively")
-    parser.add_argument('--epochs', type=int, default=500, help="number of epochs to train")
+    parser.add_argument('--epochs', type=int, default=400, help="number of epochs to train")
     parser.add_argument('--warm-up-epochs', type=int, default=200, help="number of warm-up epochs")
     parser.add_argument('--kl-weight', type=float, default=1., help="weight of KL in VAE loss")
-    parser.add_argument('--ckpt-dir', type=str, default='../results', help="directory to store checkpoints")
+    parser.add_argument('--ckpt-dir', type=str, default=os.path.join('..', 'results'), help="directory to store checkpoints")
     parser.add_argument('--batch-size', type=int, default=250, help="batch size for training")
     parser.add_argument('--lr', type=float, default=1e-4, help="learning rate of the model")
     parser.add_argument('--no-restore', action='store_true', help="do not restore trained model even if possible")
-    parser.add_argument('--resolutions', type=float, nargs='+', default=(0.02, 0.04, 0.06, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.7), help="leiden resolutions")
+    parser.add_argument('--resolutions', type=float, nargs='+', default=(0.05, 0.1, 0.15, 0.2, 0.3, 0.4), help="leiden resolutions")
     parser.add_argument('--run-id', type=str, default='', help="a string to distinguish different runs")
+    parser.add_argument('--no-be', action='store_true', help='do not calculate batch mixing entropy')
     args = parser.parse_args()
 
     adata = anndata.read_h5ad(args.h5ad_path)
@@ -392,6 +393,9 @@ if __name__ == '__main__':
         learning_rate=args.lr
     )
 
+    import psutil
+    print(psutil.Process().memory_info())
+
     adata.obs['y'] = labels
     print(f'ARI_type: {adjusted_rand_score(adata.obs.cell_types, adata.obs.y)}')
     print(f'NMI_type: {normalized_mutual_info_score(adata.obs.cell_types, adata.obs.y)}')
@@ -400,10 +404,12 @@ if __name__ == '__main__':
         print(f'NMI_batch: {normalized_mutual_info_score(adata.obs.batch_indices, adata.obs.y)}')
     
     adata.obsm['latent'] = latent
+    sc.settings.figdir = args.ckpt_dir
     sc.pp.neighbors(adata, n_neighbors=15, use_rep="latent")
     for resolution in args.resolutions:
-        umap_and_leiden(adata, save_path=f'_{dataset_str}_scVAE_resolution}.pdf', use_rep='latent', leiden_resolution=resolution)
+        umap_and_leiden(adata, save_path=f'_{dataset_str}_scVAE_resolution{resolution}.pdf', use_rep='latent', leiden_resolution=resolution)
         if adata.obs.leiden.nunique() > adata.obs.cell_types.nunique():
             break
     
-    print(f'BE: {entropy_batch_mixing(latent, adata.obs.batch_indices)}')
+    if not args.no_be:
+        print(f'BE: {entropy_batch_mixing(latent, adata.obs.batch_indices)}')

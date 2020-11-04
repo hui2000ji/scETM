@@ -103,7 +103,7 @@ def train(model: torch.nn.Module, adata: anndata.AnnData, args, step=0, epoch=0,
                 fwd_dict, data_dict, hyper_param_dict)
             loss.backward()
             norms = torch.nn.utils.clip_grad_norm_(model.parameters(), 500)
-            new_tracked_items['max_norm'] = norms.max().cpu().numpy()
+            new_tracked_items['max_norm'] = norms.cpu().numpy()
             optimizer.step()
 
             # log tracked items
@@ -188,11 +188,11 @@ def evaluate(model: torch.nn.Module, adata: anndata.AnnData, args, step, epoch,
         embeddings, int(epoch), args, adata,
         tracked_items, tracked_metric, cell_types, metadata)
     if save_emb:
-        save_embeddings(model, embeddings, args)
-    draw_embeddings(
-        adata=adata, epoch=int(epoch), args=args, cell_types=cell_types,
-        embeddings=embeddings, train_instance_name=Path(args.ckpt_dir).name,
-        ckpt_dir=args.ckpt_dir, fname_postfix="eval")
+        save_embeddings(model, adata, embeddings, args)
+    if not args.no_draw:
+        draw_embeddings(
+            adata=adata, epoch=int(epoch), args=args, cell_types=cell_types,
+            embeddings=embeddings, ckpt_dir=args.ckpt_dir, fname_postfix="eval")
     logging(logging_items, args.ckpt_dir)
 
 

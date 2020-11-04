@@ -50,6 +50,7 @@ parser.add_argument('--save-embeddings', action='store_true', help='store cell, 
 parser.add_argument('--dataset-str', type=str, default='cortex', help='dataset name')
 parser.add_argument('--anndata-path', type=str, default='', help='path to pickled Anndata object')
 parser.add_argument('--h5ad-path', type=str, default='', help='path to the h5ad file representing an Anndata object')
+parser.add_argument('--pathway-csv-path', type=str, default='', help='path to the csv file containing the gene-pathway matrix')
 
 # Dataset preprocessing parameters
 parser.add_argument('--clip', type=int, default=0, help='enable dataset clipping, 0 for not clipping')
@@ -60,11 +61,13 @@ parser.add_argument('--norm-cell-read-counts', action='store_true', help='whethe
 # Embedding plotting parameters
 parser.add_argument('--always-draw', nargs='*', default=['cell_types', 'leiden', 'batch_indices'],
                     help='embeddings that will be drawn after each evaluation (gt, p, q, k, batch)')
+parser.add_argument('--no-draw', action='store_true', help='do not draw')
 parser.add_argument('--n-neighbors', type=int, default=15, help='number of neighbors to compute UMAP')
 parser.add_argument('--min_dist', type=float, default=0.3, help='minimum distance b/t UMAP embedded points')
 parser.add_argument('--spread', type=float, default=1., help='scale of the embedded points')
 parser.add_argument('--louvain-resolutions', type=float, nargs='*', default=(0.05, 0.1, 0.15, 0.2), help='resolution of louvain clustering')
 parser.add_argument('--leiden-resolutions', type=float, nargs='*', default=(0.05, 0.1, 0.15, 0.2), help='resolution of leiden clustering')
+parser.add_argument('--fix-resolutions', action='store_true', help='do not automatically tune the resolutions')
 parser.add_argument('--figsize', type=int, nargs=2, default=(10, 10), help='size of the plotted figure')
 parser.add_argument('--fontsize', type=int, default=10, help='font size in plotted figure')
 parser.add_argument('--dpi-show', type=int, default=120, help='Resolution of shown figures')

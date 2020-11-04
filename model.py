@@ -628,7 +628,7 @@ def get_louvain_type(model, adata, args, use_rep='w_cell_emb'):
 
     aris.sort(key=lambda x: x[2])
     n_labels = adata.obs.cell_types.nunique()
-    if len(aris) > 2:
+    if len(aris) > 2 and not args.fix_resolutions:
         if aris[1][2] < n_labels / 2 and aris[-1][2] <= n_labels:
             args.louvain_resolutions = [res + 0.05 for res in args.louvain_resolutions]
         elif aris[-1][2] > n_labels and args.louvain_resolutions[0] > 0.01:
@@ -656,7 +656,7 @@ def get_leiden_type(model, adata, args, use_rep='w_cell_emb'):
 
     aris.sort(key=lambda x: x[2])
     n_labels = adata.obs.cell_types.nunique()
-    if len(aris) > 2:
+    if len(aris) > 2 and not args.fix_resolutions:
         if aris[1][2] < n_labels / 2 and aris[-1][2] <= n_labels:
             args.leiden_resolutions = [res + 0.05 for res in args.leiden_resolutions]
         elif aris[-1][2] > n_labels and args.leiden_resolutions[0] > 0.01:
