@@ -48,6 +48,6 @@ scETM requires a cells-by-genes matrix as input, in the format of an [AnnData](h
 
 <a name="baseline"></a>
 ### Running baseline methods
-The commands used for running [Harmony](https://github.com/immunogenomics/harmony), [Scanorama](https://github.com/brianhie/scanorama), [Seurat](https://satijalab.org/seurat/), [scVAE-GM](https://github.com/scvae/scvae), [scVI](https://github.com/YosefLab/scvi-tools), [LIGER](https://macoskolab.github.io/liger/), [scVI-LD](https://www.biorxiv.org/content/10.1101/737601v1.full.pdf) are available in the [benchmark](https://github.com/hui2000ji/scETM/baselines) folder.
+The commands used for running [Harmony](https://github.com/immunogenomics/harmony), [Scanorama](https://github.com/brianhie/scanorama), [Seurat](https://satijalab.org/seurat/), [scVAE-GM](https://github.com/scvae/scvae), [scVI](https://github.com/YosefLab/scvi-tools), [LIGER](https://macoskolab.github.io/liger/), [scVI-LD](https://www.biorxiv.org/content/10.1101/737601v1.full.pdf) are available in the [baselines](https://github.com/hui2000ji/scETM/baselines) folder.
 
 - scripts for harmony, scanorama, seurat, liger to be added, scalign needs to be deleted (?)
