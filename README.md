@@ -15,7 +15,7 @@ This repository includes detailed instructions for installation and requirements
     - [Demos](#demos)
 4. [Benchmarking](#benchmarking)
   - [Data simulation](#simulation)
-  - [Running other SOTA methods](#sota)
+  - [Running baseline methods](#baseline)
 
 
 <a name="overview"></a>
@@ -46,8 +46,8 @@ scETM requires a cells-by-genes matrix as input, in the format of an [AnnData](h
 ### Data simulation
 - to be added
 
-<a name="sota"></a>
-### Running other SOTA methods
-The commands used for running [Harmony](https://github.com/immunogenomics/harmony), [Scanorama](https://github.com/brianhie/scanorama), [Seurat](https://satijalab.org/seurat/), [scVAE-GM](https://github.com/scvae/scvae), [scVI](https://github.com/YosefLab/scvi-tools), [LIGER](https://macoskolab.github.io/liger/), [scVI-LD](https://www.biorxiv.org/content/10.1101/737601v1.full.pdf) are available in the [benchmark](https://github.com/hui2000ji/scETM/data) folder.
+<a name="baseline"></a>
+### Running baseline methods
+The commands used for running [Harmony](https://github.com/immunogenomics/harmony), [Scanorama](https://github.com/brianhie/scanorama), [Seurat](https://satijalab.org/seurat/), [scVAE-GM](https://github.com/scvae/scvae), [scVI](https://github.com/YosefLab/scvi-tools), [LIGER](https://macoskolab.github.io/liger/), [scVI-LD](https://www.biorxiv.org/content/10.1101/737601v1.full.pdf) are available in the [benchmark](https://github.com/hui2000ji/scETM/baselines) folder.
 
-- folder and scripts to be added
+- scripts for harmony, scanorama, seurat, liger to be added, scalign needs to be deleted (?)
