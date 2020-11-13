@@ -37,6 +37,7 @@ scETM requires a cells-by-genes matrix as input, in the format of an AnnData obj
 
 <a name="usage"></a>
 ### Example usage
+1. scETM
 ```
 $ python train.py \
  --model scETM \
@@ -45,15 +46,18 @@ $ python train.py \
  --h5ad-path data/MousePancreas.h5ad
 ```
 
+2. pathway-informed scETM
+  - to be added by Huiyu
+
 <a name="benchmarking"></a>
 ## 4 Benchmarking
 
 <a name="simulation"></a>
 ### Data simulation
-- to be added
+- to be added by Huiyu
 
 <a name="baseline"></a>
 ### Running baseline methods
 The commands used for running [Harmony](https://github.com/immunogenomics/harmony), [Scanorama](https://github.com/brianhie/scanorama), [Seurat](https://satijalab.org/seurat/), [scVAE-GM](https://github.com/scvae/scvae), [scVI](https://github.com/YosefLab/scvi-tools), [LIGER](https://macoskolab.github.io/liger/), [scVI-LD](https://www.biorxiv.org/content/10.1101/737601v1.full.pdf) are available in the [baselines](/baselines) folder.
 
-- scripts for harmony, scanorama, seurat, liger to be added, scalign needs to be deleted (?)
+- TODO: scripts for harmony, scanorama, seurat, liger to be added, scalign needs to be deleted (?)
