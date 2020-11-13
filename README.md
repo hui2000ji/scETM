@@ -11,8 +11,8 @@ This repository includes detailed instructions for installation and requirements
 1. [Model Overview](#overview)
 2. [Installation](#installation)
 3. [Usage](#usage)
-    - [Required data](#requireddata)
-    - [Demos](#demos)
+  - [Required data](#requireddata)
+  - [Example usage](#usage)
 4. [Benchmarking](#benchmarking)
   - [Data simulation](#simulation)
   - [Running baseline methods](#baseline)
@@ -26,18 +26,24 @@ This repository includes detailed instructions for installation and requirements
 
 <a name="installation"></a>
 ## 2 Installation
-- todo
+- TODO: add the requirements.txt
 
 <a name="usage"></a>
 ## 3 Usage
 
 <a name="data"></a>
 ### Required data
-scETM requires a cells-by-genes matrix as input, in the format of an [AnnData](https://anndata.readthedocs.io/en/latest/) object.
+scETM requires a cells-by-genes matrix as input, in the format of an AnnData object. Detailed description about AnnData can be found [here](https://anndata.readthedocs.io/en/latest/).
 
-<a name="demos"></a>
-### Demos
-- using the MP dataset, todo
+<a name="usage"></a>
+### Example usage
+```
+$ python train.py \
+ --model scETM \
+ --norm-cells \
+ --n-topics 100 \
+ --h5ad-path data/MousePancreas.h5ad
+```
 
 <a name="benchmarking"></a>
 ## 4 Benchmarking
