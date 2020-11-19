@@ -68,12 +68,12 @@ def train(model: torch.nn.Module, adata: anndata.AnnData, args, step=0, epoch=0,
         ('n_cells', adata.n_obs),
         ('n_genes', adata.n_vars),
         ('n_edges', adata.X.sum()),
-        ('n_labels', adata.obs.cell_types.nunique()),
+        ('n_labels', adata.obs.cell_types.nunique() if not args.no_eval else 0),
         ('n_batches', adata.obs.batch_indices.nunique()),
         ('ckpt_dir', train_instance_name),
-        ('true_label_dist', ', '.join(
+        ('true_label_dist', (', '.join(
             [f'{name}: {count}' for name, count in
-             adata.obs.cell_types.value_counts().iteritems()])),
+             adata.obs.cell_types.value_counts().iteritems()])) if not args.no_eval else 0),
         ('argv', ' '.join(sys.argv))
     ], ckpt_dir)
     tracked_items = defaultdict(list)
@@ -118,20 +118,21 @@ def train(model: torch.nn.Module, adata: anndata.AnnData, args, step=0, epoch=0,
             epoch = step / steps_per_epoch
 
             # eval
-            if not args.no_eval and (epoch >= next_ckpt_epoch or step == args.updates or epoch >= args.n_epochs):
+            if (epoch >= next_ckpt_epoch or step == args.updates or epoch >= args.n_epochs):
                 duration = time.time() - start_time
                 logging(f'Took {duration:.1f} seconds ({duration / 60:.1f} minutes) to train {epoch - start_epoch:.1f} epochs.', args.ckpt_dir)
                 mem_info = psutil.Process().memory_info()
                 logging(repr(mem_info), args.ckpt_dir)
+                
+                if not args.no_eval:
+                    evaluate(model, adata, args, step, next_ckpt_epoch, args.save_embeddings and epoch >= args.n_epochs,
+                            tracked_items, tracked_metric)
 
-                evaluate(model, adata, args, step, next_ckpt_epoch, args.save_embeddings and epoch >= args.n_epochs,
-                         tracked_items, tracked_metric)
-
-                # checkpointing
-                torch.save(model.state_dict(), os.path.join(
-                    ckpt_dir, f'model-{next_ckpt_epoch}'))
-                torch.save(optimizer.state_dict(),
-                           os.path.join(ckpt_dir, f'opt-{next_ckpt_epoch}'))
+                    # checkpointing
+                    torch.save(model.state_dict(), os.path.join(
+                        ckpt_dir, f'model-{next_ckpt_epoch}'))
+                    torch.save(optimizer.state_dict(),
+                            os.path.join(ckpt_dir, f'opt-{next_ckpt_epoch}'))
 
                 next_ckpt_epoch += args.log_every
                 start_time = time.time()
@@ -187,12 +188,12 @@ def evaluate(model: torch.nn.Module, adata: anndata.AnnData, args, step, epoch,
     logging_items = get_logging_items(
         embeddings, int(epoch), args, adata,
         tracked_items, tracked_metric, cell_types, metadata)
-    if save_emb:
-        save_embeddings(model, adata, embeddings, args)
     if not args.no_draw:
         draw_embeddings(
             adata=adata, epoch=int(epoch), args=args, cell_types=cell_types,
             embeddings=embeddings, ckpt_dir=args.ckpt_dir, fname_postfix="eval")
+    if save_emb:
+        save_embeddings(model, adata, embeddings, args)
     logging(logging_items, args.ckpt_dir)
 
 

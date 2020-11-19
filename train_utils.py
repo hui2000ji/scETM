@@ -166,6 +166,8 @@ def save_embeddings(model, adata, embeddings, args):
     #     save_dict['rho_fixed'] = model.rho_fixed.detach().cpu().numpy()
     if model.rho is not None:
         save_dict['rho'] = model.rho.detach().cpu().numpy()
+    if 'X_umap' in adata.obsm:
+        save_dict['delta_umap'] = adata.obsm['X_umap']
     import pickle
     with open(os.path.join(args.ckpt_dir, 'embeddings.pkl'), 'wb') as f:
         pickle.dump(save_dict, f)
