@@ -1,13 +1,11 @@
-import pickle
-import os
 import scanpy as sc
 import scvi.dataset
 import anndata
 import pandas as pd
-import numpy as np
+import logging
 
 
-def process_dataset(adata, args):
+def process_dataset(adata: anndata.AnnData, args):
     if args.norm_cell_read_counts:
         sc.pp.normalize_total(adata, target_sum=1e4)
     if args.quantile_norm:
@@ -16,39 +14,33 @@ def process_dataset(adata, args):
     if args.log1p:
         sc.pp.log1p(adata)
 
-    col = list(map(lambda s: s.lower(), list(adata.obs.columns)))
-    adata.obs.columns = col
-    if 'cell_types' not in col and 'cell_type' in col:
-        col[col.index('cell_type')] = 'cell_types'
-    convert_batch_to_int = False
-    if 'batch_indices' not in col and 'batch_id' in col:
-        batches = list(adata.obs.batch_id.unique())
-        batches.sort()
-        if not isinstance(batches[-1], str) and batches[-1] + 1 == len(batches):
-            col[col.index('batch_id')] = 'batch_indices'
-        else:
-            convert_batch_to_int = True
-    adata.obs.columns = col
-    if convert_batch_to_int:
-        adata.obs['batch_indices'] = adata.obs.batch_id.apply(lambda x: batches.index(x))
+    if 'batch_indices' in adata.obs:
+        batches = sorted(list(adata.obs.batch_indices.unique()))
+        if isinstance(batches[-1], str) or batches[0] != 0 or batches[-1] + 1 != len(batches):
+            logging.debug('Converting batch names to integers...')
+            adata.obs['batch_indices'] = adata.obs.batch_indices.apply(lambda x: batches.index(x))
+        adata.obs.batch_indices = adata.obs.batch_indices.astype(str).astype('category')
 
     adata.obs_names_make_unique()
-
-    if adata.obs.batch_indices.nunique() < 100:
-        adata.obs.batch_indices = adata.obs.batch_indices.astype('str').astype('category')
 
     if args.pathway_csv_path:
         mat = pd.read_csv(args.pathway_csv_path, index_col=0)
         genes = sorted(list(set(mat.index).intersection(adata.var_names)))
-        print(f'Found {len(genes)} mutual genes in the gene-pathway matrix and the dataset.')
         if args.gene_emb_dim == 0:
-            # Fixed gene embedding only. Keep the genes in the intersection of "mat" and "adata".
+            logging.debug(f'Using {mat.shape[1]}-dim fixed gene embedding for {len(genes)} genes appeared in both the gene-pathway matrix and the dataset.')
             adata = adata[:, genes]
             adata.varm['gene_emb'] = mat.loc[genes, :].values
         else:
-            # Will partly train gene embedding. Keep all genes from "adata".
+            logging.debug(f'{mat.shape[1]} dimensions of the gene embeddings will be trainable. Keeping all genes in the dataset') 
             mat = mat.reindex(index = adata.var_names, fill_value=0.0)
             adata.varm['gene_emb'] = mat.values
+
+    logging.info(f'adata: {adata}')
+    if 'batch_indices' in adata.obs:
+        logging.info(f'n_batches: {adata.obs.batch_indices.nunique()}')
+    if not args.no_eval and 'cell_types' in adata.obs:
+        logging.info(f'n_labels: {adata.obs.cell_types.nunique()}')
+        logging.info(f'label counts: {adata.obs.cell_types.value_counts()}')
     return adata
 
 

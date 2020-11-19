@@ -6,7 +6,6 @@ import torch.nn.functional as F
 from sklearn.cluster import KMeans
 from torch.autograd import Function
 from scvi.models.distributions import ZeroInflatedNegativeBinomial
-from scvi.models.modules import DecoderSCVI
 from torch.distributions import Normal, Independent
 from scipy.sparse import csr_matrix
 from sklearn.metrics import adjusted_rand_score, adjusted_mutual_info_score, \
@@ -25,7 +24,7 @@ class BaseCellModel(nn.Module):
         self.n_cells = adata.n_obs
         self.n_genes = adata.n_vars
         self.n_batches = adata.obs.batch_indices.nunique()
-        self.batch_removal = args.input_batch_id
+        self.input_batch_id = args.input_batch_id
         self.batch_scaling = args.batch_scaling
         self.batch_size = args.batch_size
         self.mask_ratio = args.mask_ratio
@@ -63,7 +62,7 @@ class BaseCellModel(nn.Module):
                 library_size = torch.FloatTensor(self.library_size[start: start + self.batch_size]).to(self.device)
                 data_dict = dict(cells=cells, library_size=library_size,
                     cell_indices=torch.arange(start, min(start + self.batch_size, self.n_cells), device=self.device))
-                if self.batch_removal or self.batch_scaling:
+                if self.input_batch_id or self.batch_scaling:
                     batch_indices = torch.LongTensor(self.batch_indices[start: start + self.batch_size]).to(self.device)
                     data_dict['batch_indices'] = batch_indices
                 fwd_dict = self(data_dict, dict(val=True))
@@ -75,7 +74,7 @@ class BaseCellModel(nn.Module):
             cells = torch.FloatTensor(X).to(self.device)
             library_size = torch.FloatTensor(self.library_size).to(self.device)
             data_dict = dict(cells=cells, library_size=library_size, cell_indices=torch.arange(self.n_cells, device=self.device))
-            if self.batch_removal or self.batch_scaling:
+            if self.input_batch_id or self.batch_scaling:
                 batch_indices = torch.LongTensor(self.batch_indices).to(self.device)
                 data_dict['batch_indices'] = batch_indices
             fwd_dict = self(data_dict, dict(val=True))
@@ -256,7 +255,7 @@ class scETM(BaseCellModel):
             self.library_size = adata.X.sum(1, keepdims=True) 
  
         self.q_delta = self.get_fully_connected_layers(
-            n_input=self.n_genes + ((self.n_batches - 1) if self.batch_removal else 0),
+            n_input=self.n_genes + ((self.n_batches - 1) if self.input_batch_id else 0),
             hidden_sizes=args.hidden_sizes,
             args=args
         )
@@ -320,7 +319,7 @@ class scETM(BaseCellModel):
         normed_cells = cells / library_size if self.norm_cells else cells
         batch_size = cells.shape[0]
 
-        if self.batch_removal:
+        if self.input_batch_id:
             normed_cells = torch.cat((normed_cells, self._get_batch_indices_oh(data_dict)), dim=1)
         
         q_delta = self.q_delta(normed_cells)
@@ -425,7 +424,7 @@ class scETMMultiDecoder(BaseCellModel):
             self.library_size = adata.X.sum(1, keepdims=True)
  
         self.q_delta = self.get_fully_connected_layers(
-            n_input=self.n_genes + ((self.n_batches - 1) if self.batch_removal else 0),
+            n_input=self.n_genes + ((self.n_batches - 1) if self.input_batch_id else 0),
             hidden_sizes=args.hidden_sizes,
             args=args
         )
@@ -435,7 +434,7 @@ class scETMMultiDecoder(BaseCellModel):
 
         self.n_groups = adata.obs[self.group_by].nunique()
         self.group_col = torch.LongTensor(adata.obs[self.group_by].values.codes.copy()).to(device)
-        self.beta = [nn.Linear(self.n_topics + ((self.n_batches - 1) if self.batch_removal else 0), self.n_genes, bias=False) for _ in range(self.n_groups)]
+        self.beta = [nn.Linear(self.n_topics + ((self.n_batches - 1) if self.input_batch_id else 0), self.n_genes, bias=False) for _ in range(self.n_groups)]
         for i, module in enumerate(self.beta):
             self.add_module(f'beta_{i}', module)
 
@@ -501,7 +500,7 @@ class scETMMultiDecoder(BaseCellModel):
         theta = F.softmax(delta, dim=-1)  # [batch_size, n_topics]
 
         # beta = self.rho(self.alpha)  # [n_topics, n_genes]
-        if self.batch_removal:
+        if self.input_batch_id:
             new_theta = torch.cat((theta, self._get_batch_indices_oh(data_dict)), dim=1)
         else:
             new_theta = theta
@@ -564,7 +563,7 @@ class SupervisedClassifier(BaseCellModel):
             self.library_size = adata.X.sum(1, keepdims=True)
         self.batch_indices = adata.obs.batch_indices.astype(int)
         self.encoder = self.get_fully_connected_layers(
-            n_input=self.n_genes + ((self.n_batches - 1) if self.batch_removal else 0),
+            n_input=self.n_genes + ((self.n_batches - 1) if self.input_batch_id else 0),
             hidden_sizes=args.hidden_sizes,
             args=args
         )
@@ -659,7 +658,7 @@ def get_leiden_type(model, adata, args, use_rep='w_cell_emb'):
     n_labels = adata.obs.cell_types.nunique()
     if len(aris) > 2 and not args.fix_resolutions:
         if aris[1][2] < n_labels / 2 and aris[-1][2] <= n_labels:
-            args.leiden_resolutions = [res + 0.05 for res in args.leiden_resolutions]
+            args.leiden_resolutions = [res + min(0.05, min(args.leiden_resolutions)) for res in args.leiden_resolutions]
         elif aris[-1][2] > n_labels and args.leiden_resolutions[0] > 0.01:
             args.leiden_resolutions = [res - min(0.1, min(args.leiden_resolutions) / 2) for res in args.leiden_resolutions]
 
@@ -677,12 +676,3 @@ def get_k_type(model):
 
 def get_kl(mu, logsigma):
     return -0.5 * (1 + logsigma - mu.pow(2) - logsigma.exp()).sum(-1)
-
-
-class BlackHole(object):
-    def __setattr__(self, name, value):
-        pass
-    def __getattr__(self, name):
-        def method(*args, **kwargs):
-            pass
-        return method
