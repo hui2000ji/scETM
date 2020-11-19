@@ -337,6 +337,8 @@ if __name__ == '__main__':
     parser.add_argument('--resolutions', type=float, nargs='+', default=(0.05, 0.1, 0.15, 0.2, 0.3, 0.4), help="leiden resolutions")
     parser.add_argument('--run-id', type=str, default='', help="a string to distinguish different runs")
     parser.add_argument('--no-be', action='store_true', help='do not calculate batch mixing entropy')
+    parser.add_argument('--no-eval', action='store_true', help='quit immediately after training')
+
     args = parser.parse_args()
 
     adata = anndata.read_h5ad(args.h5ad_path)
@@ -361,14 +363,14 @@ if __name__ == '__main__':
         adata.obs['batch_indices'] = adata.obs.batch_id.apply(lambda x: batches.index(x))
 
     if args.n_labels == -1:
-        args.n_labels = adata.obs.cell_types.nunique()
+        args.n_labels = adata.obs.cell_types.nunique() if not args.no_eval else 1
 
     from scipy.sparse import csr_matrix
     data_set = DataSet(dataset_str,
         title=dataset_str,
         specifications=dict(),
         values=csr_matrix(adata.X),
-        labels=np.asarray_chkfinite(adata.obs.cell_types),
+        labels=np.asarray_chkfinite(adata.obs.cell_types) if not args.no_eval else np.zeros_like(adata.obs.batch_indices),
         batch_indces=np.asarray_chkfinite(adata.obs.batch_indices),
         feature_names=np.asarray_chkfinite(adata.var_names)
     )
@@ -395,6 +397,9 @@ if __name__ == '__main__':
 
     import psutil
     print(psutil.Process().memory_info())
+    if args.no_eval:
+        import sys
+        sys.exit(0)
 
     adata.obs['y'] = labels
     print(f'ARI_type: {adjusted_rand_score(adata.obs.cell_types, adata.obs.y)}')

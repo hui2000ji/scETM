@@ -40,10 +40,11 @@ parser.add_argument('--leiden-resolutions', type=float, nargs='*',
                     default=(0.01, 0.015, 0.02, 0.025, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.1, 0.15, 0.2),
                     help='resolutions at leiden clustering')
 parser.add_argument('--no-be', action='store_true', help='do not calculate batch mixing entropy')
+parser.add_argument('--no-eval', action='store_true', help='quit immediately after training')
 parser.add_argument('--n-epochs', type=int, default=400, help="number of epochs to train")
-parser.add_argument('--n-layers', type=int, default=2, help='number of encoder and decoder (if any) layers')
+parser.add_argument('--n-layers', type=int, default=1, help='number of encoder and decoder (if any) layers')
 parser.add_argument('--n-hidden', type=int, default=128, help='hidden layer size')
-parser.add_argument('--n-latent', type=int, default=100, help='latent variable size')
+parser.add_argument('--n-latent', type=int, default=10, help='latent variable size')
 
 args = parser.parse_args()
 
@@ -120,6 +121,9 @@ latent, batch_indices, labels = full.sequential().get_latent()
 batch_indices = batch_indices.ravel()
 
 print(psutil.Process().memory_info())
+if args.no_eval:
+    import sys
+    sys.exit(0)
 
 if 'batch_indices' in adata.obs:
     adata.obs.batch_indices = adata.obs.batch_indices.astype(str).astype('category')
