@@ -44,6 +44,10 @@ logger.addHandler(file_handler)
 logger.setLevel(logging.INFO)
 
 adata = process_dataset(adata, args)
+
+start_time = time()
+logging.info(f'Before model instantiation and training: {psutil.Process().memory_info()}')
+
 adatas = []
 for batch in adata.obs.batch_indices.unique():
     part = adata[adata.obs.batch_indices == batch, :].copy()
@@ -51,7 +55,6 @@ for batch in adata.obs.batch_indices.unique():
         part.X = np.array(part.X.todense())
     adatas.append(part)
     
-start_time = time()
 # Integration and batch correction.
 integrated = scanorama.integrate_scanpy(adatas)
 # returns a list of 3 np.ndarrays with 100 columns.
