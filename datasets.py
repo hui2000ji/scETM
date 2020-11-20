@@ -34,7 +34,7 @@ def process_dataset(adata: anndata.AnnData, args):
             logging.info(f'{mat.shape[1]} dimensions of the gene embeddings will be trainable. Keeping all genes in the dataset') 
             mat = mat.reindex(index = adata.var_names, fill_value=0.0)
             adata.varm['gene_emb'] = mat.values
-    if hasattr(args, 'color_by'):
+    if hasattr(args, 'color_by') and (hasattr(args, 'no_draw') and not args.no_draw) and (hasattr(args, 'no_eval') and not args.no_eval):
         for col_name in args.color_by:
             assert col_name in adata.obs, f"{col_name} in args.color_by but not in adata.obs"
 
