@@ -1,4 +1,5 @@
 import argparse
+from datasets import process_dataset
 import scanpy as sc
 import matplotlib
 matplotlib.use('Agg')
@@ -311,9 +312,14 @@ def entropy_batch_mixing(latent_space, batches, n_neighbors=50, n_pools=50, n_sa
 
 if __name__ == '__main__':
     import anndata
+    import psutil
     import argparse
+    import logging
     from pathlib import Path
     import numpy as np
+    from train_utils import draw_embeddings, clustering, entropy_batch_mixing
+    from arg_parser import add_plotting_arguments, add_preprocessing_arguments
+    from datasets import process_dataset
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--h5ad-path', type=str, help="path to h5ad file storing the dataset")
@@ -327,43 +333,46 @@ if __name__ == '__main__':
     parser.add_argument('--number-of-reconstruction-classes', type=int, default=0, help="the maximum count for which to use classification")
     parser.add_argument('--batch-removal', action='store_true', help="whether to add batch correction")
     parser.add_argument('--keep-probs', type=float, nargs='+', default=(1., 1., 1., 1.), help="dropout keep prob for h, x, z and y, respectively")
-    parser.add_argument('--epochs', type=int, default=400, help="number of epochs to train")
-    parser.add_argument('--warm-up-epochs', type=int, default=200, help="number of warm-up epochs")
+    parser.add_argument('--n-epochs', type=int, default=400, help="number of epochs to train")
+    parser.add_argument('--n-warmup-epochs', type=int, default=200, help="number of warm-up epochs")
     parser.add_argument('--kl-weight', type=float, default=1., help="weight of KL in VAE loss")
     parser.add_argument('--ckpt-dir', type=str, default=os.path.join('..', 'results'), help="directory to store checkpoints")
     parser.add_argument('--batch-size', type=int, default=250, help="batch size for training")
     parser.add_argument('--lr', type=float, default=1e-4, help="learning rate of the model")
     parser.add_argument('--no-restore', action='store_true', help="do not restore trained model even if possible")
-    parser.add_argument('--resolutions', type=float, nargs='+', default=(0.05, 0.1, 0.15, 0.2, 0.3, 0.4), help="leiden resolutions")
     parser.add_argument('--run-id', type=str, default='', help="a string to distinguish different runs")
     parser.add_argument('--no-be', action='store_true', help='do not calculate batch mixing entropy')
     parser.add_argument('--no-eval', action='store_true', help='quit immediately after training')
+    add_preprocessing_arguments(parser)
+    add_plotting_arguments(parser)
 
     args = parser.parse_args()
+    sc.settings.set_figure_params(
+        dpi=args.dpi_show, dpi_save=args.dpi_save, facecolor='white', fontsize=args.fontsize, figsize=args.figsize)
 
     adata = anndata.read_h5ad(args.h5ad_path)
     dataset_str = Path(args.h5ad_path).stem
     if args.batch_removal:
         dataset_str = dataset_str + '_batch'
+    os.makedirs(os.path.join(args.ckpt_dir, dataset_str.lower()), exist_ok=True)
 
-    col = list(map(lambda s: s.lower(), list(adata.obs.columns)))
-    adata.obs.columns = col
-    if 'cell_type' in col:
-        col[col.index('cell_type')] = 'cell_types'
-    convert_batch_to_int = False
-    if 'batch_id' in col:
-        batches = list(adata.obs.batch_id.unique())
-        batches.sort()
-        if not isinstance(batches[-1], str) and batches[-1] + 1 == len(batches):
-            col[col.index('batch_id')] = 'batch_indices'
-        else:
-            convert_batch_to_int = True
-    adata.obs.columns = col
-    if convert_batch_to_int:
-        adata.obs['batch_indices'] = adata.obs.batch_id.apply(lambda x: batches.index(x))
+    stream_handler = logging.StreamHandler()
+    file_handler = logging.FileHandler(os.path.join(args.ckpt_dir, dataset_str.lower(), 'log.txt'))
+    for handler in (stream_handler, file_handler):
+        handler.setFormatter(logging.Formatter('%(levelname)s [%(asctime)s]: %(message)s'))
+        handler.setLevel(logging.INFO)
+    logger = logging.getLogger()
+    for handler in logger.handlers:
+        logger.removeHandler(handler)
+    logger.addHandler(stream_handler)
+    logger.addHandler(file_handler)
+    logger.setLevel(logging.INFO)
+
+    adata = process_dataset(adata, args)
 
     if args.n_labels == -1:
         args.n_labels = adata.obs.cell_types.nunique() if not args.no_eval else 1
+    logging.info(f'Before model instantiation and training: {psutil.Process().memory_info()}')
 
     from scipy.sparse import csr_matrix
     data_set = DataSet(dataset_str,
@@ -381,8 +390,8 @@ if __name__ == '__main__':
         latent_distribution=args.latent_distribution,
         hidden_sizes=args.hidden_sizes,
         number_of_classes=args.n_labels,
-        number_of_epochs=args.epochs,
-        number_of_warm_up_epochs=args.warm_up_epochs,
+        number_of_epochs=args.n_epochs,
+        number_of_warm_up_epochs=args.n_warmup_epochs,
         prior_probabilities_method=args.prior,
         reconstruction_distribution=args.reconstruction_distribution,
         number_of_reconstruction_classes=args.number_of_reconstruction_classes,
@@ -395,26 +404,22 @@ if __name__ == '__main__':
         learning_rate=args.lr
     )
 
-    import psutil
-    print(psutil.Process().memory_info())
+    logging.info(f'After model instantiation and training: {psutil.Process().memory_info()}')
     if args.no_eval:
         import sys
         sys.exit(0)
 
-    adata.obs['y'] = labels
-    print(f'ARI_type: {adjusted_rand_score(adata.obs.cell_types, adata.obs.y)}')
-    print(f'NMI_type: {normalized_mutual_info_score(adata.obs.cell_types, adata.obs.y)}')
+    # Evaluation
+    logging.info(f'ARI_type: {adjusted_rand_score(adata.obs.cell_types, labels)}')
+    logging.info(f'NMI_type: {normalized_mutual_info_score(adata.obs.cell_types, labels)}')
     if adata.obs.batch_indices.nunique() > 1:
-        print(f'ARI_batch: {adjusted_rand_score(adata.obs.batch_indices, adata.obs.y)}')
-        print(f'NMI_batch: {normalized_mutual_info_score(adata.obs.batch_indices, adata.obs.y)}')
-    
+        logging.info(f'ARI_batch: {adjusted_rand_score(adata.obs.batch_indices, labels)}')
+        logging.info(f'NMI_batch: {normalized_mutual_info_score(adata.obs.batch_indices, labels)}')
     adata.obsm['latent'] = latent
-    sc.settings.figdir = args.ckpt_dir
-    sc.pp.neighbors(adata, n_neighbors=15, use_rep="latent")
-    for resolution in args.resolutions:
-        umap_and_leiden(adata, save_path=f'_{dataset_str}_scVAE_resolution{resolution}.pdf', use_rep='latent', leiden_resolution=resolution)
-        if adata.obs.leiden.nunique() > adata.obs.cell_types.nunique():
-            break
-    
-    if not args.no_be:
-        print(f'BE: {entropy_batch_mixing(latent, adata.obs.batch_indices)}')
+    cluster_key = clustering('latent', adata, args)
+    if adata.obs.batch_indices.nunique() > 1 and not args.no_be:
+        logging.info(f'BE: {entropy_batch_mixing(latent, adata.obs.batch_indices):7.4f}')
+    if not args.no_draw:
+        color_by = [cluster_key] + args.color_by
+        draw_embeddings(adata=adata, fname=f'{dataset_str}_{args.model}.pdf',
+            args=args, color_by=color_by, use_rep='latent')

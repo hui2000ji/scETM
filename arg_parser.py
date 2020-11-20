@@ -22,7 +22,7 @@ parser.add_argument('--group-by', type=str, default='condition', help='dataframe
 parser.add_argument('--max-supervised-weight', type=float, default=0, help='weight of supervsied loss, 0 to turn off supervised components')
 parser.add_argument('--max-kl-weight', type=float, default=1., help='max weight for kl divergence')
 parser.add_argument('--min-kl-weight', type=float, default=0., help='min weight for kl divergence')
-parser.add_argument('--kl-weight-anneal', type=int, default=300, help='linear annealing of kl divergence loss')
+parser.add_argument('--n-warmup-epochs', type=int, default=300, help='linear annealing of kl divergence loss')
 parser.add_argument('--normed-loss', action='store_true', help='whether to normalize gene expression when calculating loss')
 
 # Training parameters
@@ -51,22 +51,38 @@ parser.add_argument('--h5ad-path', type=str, default='', help='path to the h5ad 
 parser.add_argument('--pathway-csv-path', type=str, default='', help='path to the csv file containing the gene x pathway matrix')
 
 # Dataset preprocessing parameters
-parser.add_argument('--clip', type=int, default=0, help='enable dataset clipping, 0 for not clipping')
-parser.add_argument('--quantile-norm', action='store_true', help='enable quantile normalization for cell-gene matrix')
-parser.add_argument('--log1p', action='store_true', help='log1p transform the dataset')
-parser.add_argument('--norm-cell-read-counts', action='store_true', help='whether to normalize cell read counts')
+def add_preprocessing_arguments(parser):
+    """
+    Add parameters '--clip', '--quantile-norm', '--log1p', '--norm-cell-read-counts'.
+    """
+    parser.add_argument('--clip', type=int, default=0, help='enable dataset clipping, 0 for not clipping')
+    parser.add_argument('--quantile-norm', action='store_true', help='enable quantile normalization for cell-gene matrix')
+    parser.add_argument('--log1p', action='store_true', help='log1p transform the dataset')
+    parser.add_argument('--norm-cell-read-counts', action='store_true', help='whether to normalize cell read counts')
+add_preprocessing_arguments(parser)
 
 # Embedding plotting parameters
-parser.add_argument('--always-draw', nargs='*', default=['cell_types', 'batch_indices'],
-                    help='embeddings that will be drawn after each evaluation')
-parser.add_argument('--no-draw', action='store_true', help='do not draw')
-parser.add_argument('--n-neighbors', type=int, default=15, help='number of neighbors to compute UMAP')
-parser.add_argument('--min_dist', type=float, default=0.3, help='minimum distance b/t UMAP embedded points')
-parser.add_argument('--spread', type=float, default=1., help='scale of the embedded points')
-parser.add_argument('--clustering-method', type=str, choices=('louvain', 'leiden'), default='leiden', help='clustering algorithm')
-parser.add_argument('--resolutions', type=float, nargs='+', default=(0.05, 0.1, 0.15, 0.2), help='resolution of leiden/louvain clustering')
-parser.add_argument('--fix-resolutions', action='store_true', help='do not automatically tune the resolutions')
-parser.add_argument('--figsize', type=int, nargs=2, default=(10, 10), help='size of the plotted figure')
-parser.add_argument('--fontsize', type=int, default=10, help='font size in plotted figure')
-parser.add_argument('--dpi-show', type=int, default=120, help='Resolution of shown figures')
-parser.add_argument('--dpi-save', type=int, default=250, help='Resolution of saved figures')
+def add_plotting_arguments(parser):
+    """
+    Add parameters '--no_draw'; '--color_by', '--n_neighbors', '--min_dist', '--spread';
+    '--clustering-method', '--resolutions', '--fix-resolutions'; '--figsize', '--fontsize',
+    '--dpi-show', '--dpi-save'.
+    """
+    # plot or not
+    parser.add_argument('--no-draw', action='store_true', help='do not draw')
+    # draw_embeddings
+    parser.add_argument('--color-by', nargs='*', default=['cell_types', 'batch_indices'],
+                        help='columns of adata.obs that will be visualized at each evaluation')
+    parser.add_argument('--n-neighbors', type=int, default=15, help='number of neighbors to compute UMAP')
+    parser.add_argument('--min_dist', type=float, default=0.3, help='minimum distance b/t UMAP embedded points')
+    parser.add_argument('--spread', type=float, default=1., help='scale of the embedded points')
+    # clustering
+    parser.add_argument('--clustering-method', type=str, choices=('louvain', 'leiden'), default='leiden', help='clustering algorithm')
+    parser.add_argument('--resolutions', type=float, nargs='+', default=(0.05, 0.1, 0.15, 0.2), help='resolution of leiden/louvain clustering')
+    parser.add_argument('--fix-resolutions', action='store_true', help='do not automatically tune the resolutions')
+    # sc.settings.set_figure_params
+    parser.add_argument('--figsize', type=int, nargs=2, default=(10, 10), help='size of the plotted figure')
+    parser.add_argument('--fontsize', type=int, default=10, help='font size in plotted figure')
+    parser.add_argument('--dpi-show', type=int, default=120, help='Resolution of shown figures')
+    parser.add_argument('--dpi-save', type=int, default=250, help='Resolution of saved figures')
+add_plotting_arguments(parser)

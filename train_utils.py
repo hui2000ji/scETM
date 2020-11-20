@@ -20,7 +20,7 @@ def get_train_instance_name(args):
             ('lr', args.lr, 2e-2),
             ('maxKLWeight', args.max_kl_weight, 1.),
             ('minKLWeight', args.min_kl_weight),
-            ('KLWeightAnneal', args.kl_weight_anneal, 300),
+            ('KLWeightAnneal', args.n_warmup_epochs, 300),
             ('inputBatchID', args.input_batch_id),
             ('maskRatio', args.mask_ratio, 0.2),
             ('supervised', args.max_supervised_weight, 0.)
@@ -50,18 +50,17 @@ def get_train_instance_name(args):
 
 
 def get_kl_weight(args, epoch):
-    if args.kl_weight_anneal:
-        kl_weight = max(min(1., epoch / args.kl_weight_anneal)
+    if args.n_warmup_epochs:
+        kl_weight = max(min(1., epoch / args.n_warmup_epochs)
                    * args.max_kl_weight, args.min_kl_weight)
     else:
         kl_weight = args.max_kl_weight
     return kl_weight
 
 
-def clustering(embeddings, adata, args):
+def clustering(use_rep, adata, args):
     logging.debug(f'Performing {args.clustering_method} clustering')
-    adata.obsm['delta'] = embeddings['delta']
-    sc.pp.neighbors(adata, n_neighbors=args.n_neighbors, use_rep='delta')
+    sc.pp.neighbors(adata, n_neighbors=args.n_neighbors, use_rep=use_rep)
     clustering_method = sc.tl.leiden if args.clustering_method == 'leiden' else sc.tl.louvain
     aris = []
     for res in args.resolutions:
@@ -131,7 +130,7 @@ def _start_shell(local_ns):
 
 def entropy_batch_mixing(latent_space, batches, n_neighbors=50, n_pools=50, n_samples_per_pool=100):
     # code adapted from scGAN
-    print('Calculating batch mixing entropy...', end='\r', flush=True)
+    logging.info('Calculating batch mixing entropy...')
     def entropy(hist_data):
         counts = pd.Series(hist_data).value_counts()
         freqs = counts / counts.sum()
@@ -144,7 +143,7 @@ def entropy_batch_mixing(latent_space, batches, n_neighbors=50, n_pools=50, n_sa
         latent_space) - scipy.sparse.identity(latent_space.shape[0])
 
     score = 0.
-    for t in range(n_pools):
+    for _ in range(n_pools):
         indices = np.random.choice(
             np.arange(latent_space.shape[0]), size=n_samples_per_pool)
         score += np.mean(

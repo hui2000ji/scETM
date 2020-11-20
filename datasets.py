@@ -17,30 +17,33 @@ def process_dataset(adata: anndata.AnnData, args):
     if 'batch_indices' in adata.obs:
         batches = sorted(list(adata.obs.batch_indices.unique()))
         if isinstance(batches[-1], str) or batches[0] != 0 or batches[-1] + 1 != len(batches):
-            logging.debug('Converting batch names to integers...')
+            logging.info('Converting batch names to integers...')
             adata.obs['batch_indices'] = adata.obs.batch_indices.apply(lambda x: batches.index(x))
         adata.obs.batch_indices = adata.obs.batch_indices.astype(str).astype('category')
 
     adata.obs_names_make_unique()
 
-    if args.pathway_csv_path:
+    if hasattr(args, 'pathway_csv_path') and args.pathway_csv_path:
         mat = pd.read_csv(args.pathway_csv_path, index_col=0)
         genes = sorted(list(set(mat.index).intersection(adata.var_names)))
         if args.gene_emb_dim == 0:
-            logging.debug(f'Using {mat.shape[1]}-dim fixed gene embedding for {len(genes)} genes appeared in both the gene-pathway matrix and the dataset.')
+            logging.info(f'Using {mat.shape[1]}-dim fixed gene embedding for {len(genes)} genes appeared in both the gene-pathway matrix and the dataset.')
             adata = adata[:, genes]
             adata.varm['gene_emb'] = mat.loc[genes, :].values
         else:
-            logging.debug(f'{mat.shape[1]} dimensions of the gene embeddings will be trainable. Keeping all genes in the dataset') 
+            logging.info(f'{mat.shape[1]} dimensions of the gene embeddings will be trainable. Keeping all genes in the dataset') 
             mat = mat.reindex(index = adata.var_names, fill_value=0.0)
             adata.varm['gene_emb'] = mat.values
+    if hasattr(args, 'color_by'):
+        for col_name in args.color_by:
+            assert col_name in adata.obs, f"{col_name} in args.color_by but not in adata.obs"
 
     logging.info(f'adata: {adata}')
     if 'batch_indices' in adata.obs:
         logging.info(f'n_batches: {adata.obs.batch_indices.nunique()}')
     if not args.no_eval and 'cell_types' in adata.obs:
         logging.info(f'n_labels: {adata.obs.cell_types.nunique()}')
-        logging.info(f'label counts: {adata.obs.cell_types.value_counts()}')
+        logging.info(f'label counts:\n{adata.obs.cell_types.value_counts()}')
     return adata
 
 

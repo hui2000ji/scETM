@@ -118,7 +118,9 @@ def evaluate(model: scETM, adata: anndata.AnnData, args, epoch,
     model.eval()
 
     embeddings = model.get_cell_emb_weights()
-    cluster_key = clustering(embeddings, adata, args)
+    for emb_name, emb in embeddings.items():
+        adata.obsm[emb_name] = emb
+    cluster_key = clustering('delta', adata, args)
 
     # Only calc BE at last step
     if adata.obs.batch_indices.nunique() > 1 and not args.no_be and \
@@ -127,13 +129,9 @@ def evaluate(model: scETM, adata: anndata.AnnData, args, epoch,
             logging.info(f'{name}_BE: {entropy_batch_mixing(latent_space, adata.obs.batch_indices):7.4f}')
 
     if not args.no_draw:
-        color_by = [cluster_key]
-        for key in args.always_draw:
-            if key in adata.obs and not key in color_by:
-                color_by.append(key)
+        color_by = [cluster_key] + args.color_by
         for emb_name, emb in embeddings.items():
-            adata.obsm[emb_name] = emb
-            draw_embeddings(adata=adata, fname=f'{emb_name}_epoch{epoch}_.pdf',
+            draw_embeddings(adata=adata, fname=f'{args.dataset_str}_{args.model}_{emb_name}_epoch{epoch}.pdf',
                 args=args, color_by=color_by, use_rep=emb_name)
     if save_emb:
         save_embeddings(model, adata, embeddings, args)
@@ -171,13 +169,11 @@ if __name__ == '__main__':
         if not os.path.exists(args.ckpt_dir):
             os.makedirs(args.ckpt_dir)
     stream_handler = logging.StreamHandler()
-    stream_handler.setLevel(logging.DEBUG)
     file_handler = logging.FileHandler(os.path.join(args.ckpt_dir, 'log.txt'))
-    file_handler.setLevel(logging.INFO)
     logging.basicConfig(
         handlers=[stream_handler, file_handler],
         format='%(levelname)s [%(asctime)s]: %(message)s',
-        level=logging.DEBUG
+        level=logging.INFO
     )
     logging.info(f'argv: {" ".join(sys.argv)}')
     logging.info(f'ckpt_dir: {args.ckpt_dir}')
@@ -199,8 +195,8 @@ if __name__ == '__main__':
     # set up step and epoch
     steps_per_epoch = max(adata.n_obs / args.batch_size, 1)
     epoch = args.restore_epoch if args.restore_epoch else 0
-    if args.n_epochs <= args.kl_weight_anneal * 2:
-        args.kl_weight_anneal = epoch / 2
+    if args.n_epochs <= args.n_warmup_epochs * 2:
+        args.n_warmup_epochs = epoch / 2
 
     # train or evaluate
     if args.eval:
