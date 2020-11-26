@@ -83,8 +83,8 @@ if (!args$no_eval) {
     for (res in args$resolutions) {
         integrated <- FindClusters(integrated, resolution = res)
         seurat <- integrated@meta.data$seurat_clusters
-        nmi <- NMI(seurat, integrated@meta.data$cell_type)
-        ari <- ARI(seurat, integrated@meta.data$cell_type)
+        nmi <- NMI(seurat, dataset@meta.data$cell_types)
+        ari <- ARI(seurat, dataset@meta.data$cell_types)
         writeLines(sprintf("resolution: %.2f", res))
         writeLines(sprintf("ARI: %.4f", ari))
         writeLines(sprintf("NMI: %.4f", nmi))

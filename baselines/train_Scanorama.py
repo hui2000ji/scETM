@@ -21,6 +21,7 @@ parser.add_argument('--ckpt-dir', type=str, help='path to checkpoint directory',
                     default=os.path.join('..', 'results'))
 parser.add_argument('--no-be', action='store_true', help='do not calculate batch mixing entropy')
 parser.add_argument('--no-eval', action='store_true', help='quit immediately after training')
+parser.add_argument('--dim-red', type=int, default=100, help='reduce the raw data into this many features before integrating')
 add_plotting_arguments(parser)
 add_preprocessing_arguments(parser)
 args = parser.parse_args()
@@ -58,7 +59,7 @@ for batch in adata.obs.batch_indices.unique():
     adatas.append(part)
     
 # Integration and batch correction.
-integrated = scanorama.integrate_scanpy(adatas)
+integrated = scanorama.integrate_scanpy(adatas, dimred=args.dimred)
 # returns a list of 3 np.ndarrays with 100 columns.
 duration = time() - start_time
 logging.info(f'Duration: {duration:.1f} s ({duration / 60:.1f} min)')
