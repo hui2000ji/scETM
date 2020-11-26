@@ -6,6 +6,8 @@ from time import strftime, time
 import psutil
 import os
 import logging
+import matplotlib
+matplotlib.use('Agg')
 import argparse
 from arg_parser import add_plotting_arguments, add_preprocessing_arguments
 from datasets import process_dataset

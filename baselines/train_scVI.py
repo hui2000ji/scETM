@@ -5,6 +5,8 @@ import scanpy as sc
 import logging
 import anndata
 import psutil
+import matplotlib
+matplotlib.use('Agg')
 
 import argparse
 from arg_parser import add_preprocessing_arguments, add_plotting_arguments
