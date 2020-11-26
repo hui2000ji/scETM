@@ -3,6 +3,7 @@ library(SeuratDisk)
 library(dplyr)
 library(cowplot)
 library(argparse)
+library(aricode)
 
 print_memory_usage <- function() {
     for (line in readLines('/proc/self/status')) {
