@@ -7,10 +7,10 @@ library(argparse)
 print_memory_usage <- function() {
     for (line in readLines('/proc/self/status')) {
         if (substr(line, 1, 6) == 'VmPeak') {
-            print(line)
+            writeLines(line)
         }
         if (substr(line, 1, 5) == 'VmRSS') {
-            print(line)
+            writeLines(line)
         }
     }
     print(gc())
@@ -77,20 +77,22 @@ print(proc.time() - start_time)
 print_memory_usage()
 
 if (!args$no_eval) {
-    dataset <- FindNeighbors(integrated, k.param = 20, dims = 1:20)
+    integrated <- RunPCA(integrated, verbose = FALSE)
+    integrated <- FindNeighbors(integrated, k.param = 20, dims = 1:20)
     for (res in args$resolutions) {
-        dataset <- FindClusters(dataset, resolution = res)
-        seurat <- dataset@meta.data$seurat_clusters
-        nmi <- NMI(seurat, dataset@meta.data$cell_type)
-        ari <- ARI(seurat, dataset@meta.data$cell_type)
+        integrated <- FindClusters(integrated, resolution = res)
+        seurat <- integrated@meta.data$seurat_clusters
+        nmi <- NMI(seurat, integrated@meta.data$cell_type)
+        ari <- ARI(seurat, integrated@meta.data$cell_type)
         writeLines(sprintf("resolution: %.2f", res))
         writeLines(sprintf("ARI: %.4f", ari))
         writeLines(sprintf("NMI: %.4f", nmi))
         writeLines(sprintf("# clusters: %d", length(table(seurat))))
         if (!args$no_draw) {
             pdf(sprintf("figures/%s_Seurat_%.3f.pdf", fname, res), width = 16, height = 8)
-            p1 <- DimPlot(dataset, reduction = "umap", group.by = "cell_types")
-            p2 <- DimPlot(dataset, reduction = "umap", group.by = "condition")
+            dataset <- RunUMAP(dataset, dims = 1:50)
+            p1 <- DimPlot(integrated, reduction = "umap", group.by = "cell_types")
+            p2 <- DimPlot(integrated, reduction = "umap", group.by = "condition")
             p1 + p2
             dev.off()
         }

@@ -9,10 +9,10 @@ library(argparse)
 print_memory_usage <- function() {
     for (line in readLines('/proc/self/status')) {
         if (substr(line, 1, 6) == 'VmPeak') {
-            print(line)
+            writeLines(line)
         }
         if (substr(line, 1, 5) == 'VmRSS') {
-            print(line)
+            writeLines(line)
         }
     }
     print(gc())
@@ -57,6 +57,7 @@ if (!args$no_eval) {
         writeLines(sprintf("# clusters: %d", length(table(seurat))))
         if (!args$no_draw) {
             pdf(sprintf("figures/%s_Liger_%.3f.pdf", fname, res), width = 16, height = 8)
+            dataset <- RunUMAP(dataset, dims = 1:50)
             p1 <- DimPlot(dataset, reduction = "umap", group.by = "cell_types")
             p2 <- DimPlot(dataset, reduction = "umap", group.by = "condition")
             p1 + p2
