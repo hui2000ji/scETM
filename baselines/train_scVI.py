@@ -23,6 +23,7 @@ parser.add_argument('--n-epochs', type=int, default=400, help="number of epochs 
 parser.add_argument('--n-layers', type=int, default=1, help='number of encoder and decoder (if any) layers')
 parser.add_argument('--n-hidden', type=int, default=128, help='hidden layer size')
 parser.add_argument('--n-latent', type=int, default=10, help='latent variable size')
+parser.add_argument('--batch-size', type=int, default=2000, help='Batch size for training')
 add_plotting_arguments(parser)
 add_preprocessing_arguments(parser)
 
@@ -91,6 +92,7 @@ else:
         train_size=1.,
         use_cuda=use_cuda,
         frequency=5,
+        batch_size=args.batch_size
     )
     trainer.train(n_epochs=args.n_epochs, lr=args.lr)
     full = trainer.create_posterior(trainer.model, dataset, indices=np.arange(len(dataset)))

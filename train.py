@@ -27,7 +27,7 @@ from model import scETM
 def train(model: torch.nn.Module, adata: anndata.AnnData, args, epoch=0,
           device=torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')):
     # sampler
-    if args.n_samplers == 1:
+    if args.n_samplers == 1 or args.batch_size >= adata.n_obs:
         sampler = CellSampler(adata, args)
     else:
         sampler = CellSamplerPool(args.n_samplers, adata, args)

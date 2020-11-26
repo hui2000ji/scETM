@@ -32,7 +32,7 @@ class CellSampler(threading.Thread):
             self.batch_indices = adata.obs.batch_indices.astype(int).values
 
     def run(self):
-        if self.batch_size < self.n_cells:
+        if self.batch_size <= self.n_cells:
             self._low_batch_size()
         else:
             self._high_batch_size()
