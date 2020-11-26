@@ -15,7 +15,8 @@ parser.add_argument('--no-bn', action='store_true', help='Disable batch normaliz
 parser.add_argument('--n-topics', type=int, default=100, help='number of topics in model')
 parser.add_argument('--norm-cells', action='store_true', help='normalize cell samples')
 parser.add_argument('--mask-ratio', type=float, default=0.2, help='random masking ratio of gene expression')
-parser.add_argument('--batch-scaling', action='store_true', help='enable cell- and batch-specific scaling')
+parser.add_argument('--batch-scaling', action='store_true', help='enable batch-specific scaling')
+parser.add_argument('--global-bias', action='store_true', help='enable global gene bias')
 
 # Loss parameters
 parser.add_argument('--max-supervised-weight', type=float, default=0, help='weight of supervsied loss, 0 to turn off supervised components')

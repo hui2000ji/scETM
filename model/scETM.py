@@ -46,6 +46,8 @@ class scETM(BaseCellModel):
         self.alpha = nn.Parameter(torch.randn(self.n_topics, self.gene_emb_dim + (adata.varm['gene_emb'].shape[1] if self.rho_fixed is not None else 0)))
         if self.batch_scaling:
             self.gene_bias = nn.Parameter(torch.randn(self.n_batches, self.n_genes))
+        
+        self.global_bias = nn.Parameter(torch.randn(1, self.n_genes)) if args.global_bias else None
 
         ## cap log variance within [-10, 10]
         self.max_logsigma = 10
@@ -113,6 +115,8 @@ class scETM(BaseCellModel):
         beta = self.alpha @ rho
 
         recon_logit = torch.mm(theta, beta)  # [batch_size, n_genes]
+        if self.global_bias:
+            recon_logit += self.global_bias
         if self.batch_scaling:
             recon_logit += self.gene_bias[data_dict['batch_indices']]
 
