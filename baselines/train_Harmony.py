@@ -2,6 +2,7 @@ import anndata as ad
 import scanpy as sc
 from pathlib import Path
 import scanpy as sc
+import numpy as np
 from time import strftime, time
 import psutil
 import os
@@ -19,6 +20,7 @@ parser.add_argument('--ckpt-dir', type=str, help='path to checkpoint directory',
                     default=os.path.join('..', 'results'))
 parser.add_argument('--no-be', action='store_true', help='do not calculate batch mixing entropy')
 parser.add_argument('--no-eval', action='store_true', help='quit immediately after training')
+parser.add_argument('--dim-red', type=int, default=50, help='reduce the raw data into this many features before integrating')
 add_plotting_arguments(parser)
 add_preprocessing_arguments(parser)
 args = parser.parse_args()
@@ -51,15 +53,20 @@ logging.info(f'Before model instantiation and training: {psutil.Process().memory
 # preprocess
 sc.pp.normalize_total(adata, target_sum=1e4)
 sc.pp.log1p(adata)
-sc.pp.highly_variable_genes(adata, flavor='seurat', n_top_genes=2000)
-sc.pp.pca(adata, n_comps=50, use_highly_variable=True)
+if args.dim_red:
+    sc.pp.highly_variable_genes(adata, flavor='seurat', n_top_genes=3000)
+    sc.pp.pca(adata, n_comps=args.dim_red, use_highly_variable=True)
+    data_mat = adata.obsm['X_pca']
+else:
+    sc.pp.scale(adata)
+    data_mat = np.array(adata.X)
 
 metadata = adata.obs
 import harmonypy as hm
 vars_use = ['batch_indices']
 from time import time
 
-ho = hm.run_harmony(adata.obsm['X_pca'], metadata, vars_use, max_iter_harmony=100)
+ho = hm.run_harmony(data_mat, metadata, vars_use, max_iter_harmony=100)
 
 duration = time() - start_time
 logging.info(f'Duration: {duration:.1f} s ({duration / 60:.1f} min)')
