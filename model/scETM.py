@@ -115,7 +115,7 @@ class scETM(BaseCellModel):
         beta = self.alpha @ rho
 
         recon_logit = torch.mm(theta, beta)  # [batch_size, n_genes]
-        if self.global_bias:
+        if self.global_bias is not None:
             recon_logit += self.global_bias
         if self.batch_scaling:
             recon_logit += self.gene_bias[data_dict['batch_indices']]
