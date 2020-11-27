@@ -59,7 +59,7 @@ for batch in adata.obs.batch_indices.unique():
     adatas.append(part)
     
 # Integration and batch correction.
-integrated = scanorama.integrate_scanpy(adatas, dimred=args.dimred)
+integrated = scanorama.integrate_scanpy(adatas, dimred=args.dim_red)
 # returns a list of 3 np.ndarrays with 100 columns.
 duration = time() - start_time
 logging.info(f'Duration: {duration:.1f} s ({duration / 60:.1f} min)')
