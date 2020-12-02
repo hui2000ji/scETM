@@ -33,8 +33,8 @@ batches <- names(table(dataset@meta.data$batch_indices))
 print(batches)
 
 args$ckpt_dir <- file.path(args$ckpt_dir, sprintf("%s_Seurat%d_%s", fname, args$subset_genes, strftime(Sys.time(),"%m_%d-%H_%M_%S")))
-if (!file.exists((args$ckpt_dir))) {
-    mkdir(args$ckpt_dir)
+if (!dir.exists((args$ckpt_dir))) {
+    dir.create()(args$ckpt_dir)
 }
 
 dataset_list <- list()
