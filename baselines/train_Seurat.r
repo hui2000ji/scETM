@@ -6,14 +6,14 @@ library(argparse)
 library(aricode)
 
 print_memory_usage <- function() {
-    for (line in readLines('/proc/self/status')) {
-        if (substr(line, 1, 6) == 'VmPeak') {
-            writeLines(line)
-        }
-        if (substr(line, 1, 5) == 'VmRSS') {
-            writeLines(line)
-        }
-    }
+    # for (line in readLines('/proc/self/status')) {
+    #     if (substr(line, 1, 6) == 'VmPeak') {
+    #         writeLines(line)
+    #     }
+    #     if (substr(line, 1, 5) == 'VmRSS') {
+    #         writeLines(line)
+    #     }
+    # }
     print(gc())
 }
 
@@ -27,7 +27,8 @@ parser$add_argument('--ckpt-dir', type = "character", help='path to checkpoint d
 
 args <- parser$parse_args()
 
-fname <- substring(basename(args$h5seurat_path), 1, nchar(args$h5seurat_path) - 9)
+fname <- basename(args$h5seurat_path)
+fname <- substring(fname, 1, nchar(fname) - 9)
 dataset <- LoadH5Seurat(args$h5seurat_path)
 batches <- names(table(dataset@meta.data$batch_indices))
 print(batches)
@@ -84,8 +85,7 @@ print(proc.time() - start_time)
 print_memory_usage()
 
 if (!args$no_eval) {
-    integrated@meta.data$cell_types <- dataset@meta.data$cell_types
-    integrated@meta.data$condition <- dataset@meta.data$condition
+    integrated@meta.data <- dataset@meta.data
     integrated <- RunPCA(integrated, verbose = FALSE)
     integrated <- FindNeighbors(integrated, k.param = 20, dims = 1:20)
     for (res in args$resolutions) {
@@ -98,11 +98,12 @@ if (!args$no_eval) {
         writeLines(sprintf("NMI: %.4f", nmi))
         writeLines(sprintf("# clusters: %d", length(table(seurat))))
         if (!args$no_draw) {
-            pdf(file.path(args$ckpt_dir, sprintf("%s_Seurat_%.3f.pdf", fname, res)), width = 16, height = 8)
             integrated <- RunUMAP(integrated, dims = 1:50)
+            pdf(file.path(args$ckpt_dir, sprintf("%s_Seurat_%.3f.pdf", fname, res)), width = 16, height = 8)
             p1 <- DimPlot(integrated, reduction = "umap", group.by = "cell_types")
-            p2 <- DimPlot(integrated, reduction = "umap", group.by = "condition")
-            p1 + p2
+            #p2 <- DimPlot(integrated, reduction = "umap", group.by = "condition")
+            p2 <- DimPlot(integrated, reduction = "umap", group.by = "batch_indices")
+            print(p1 + p2)
             dev.off()
         }
     }

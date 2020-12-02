@@ -28,7 +28,8 @@ parser$add_argument('--ckpt-dir', type = "character", help='path to checkpoint d
 args <- parser$parse_args()
 
 # Load dataset
-fname <- substring(basename(args$h5seurat_path), 1, nchar(args$h5seurat_path) - 9)
+fname <- basename(args$h5seurat_path)
+fname <- substring(fname, 1, nchar(fname) - 9)
 dataset <- LoadH5Seurat(args$h5seurat_path)
 
 args$ckpt_dir <- file.path(args$ckpt_dir, sprintf("%s_Liger%d_%s", fname, args$subset_genes, strftime(Sys.time(),"%m_%d-%H_%M_%S")))
@@ -62,11 +63,11 @@ if (!args$no_eval) {
         writeLines(sprintf("NMI: %.4f", nmi))
         writeLines(sprintf("# clusters: %d", length(table(seurat))))
         if (!args$no_draw) {
-            pdf(file.path(args$ckpt_dir, sprintf("%s_Liger_%.3f.pdf", fname, res)), width = 16, height = 8)
             dataset <- RunUMAP(dataset, dims = 1:50)
+            pdf(file.path(args$ckpt_dir, sprintf("%s_Liger_%.3f.pdf", fname, res)), width = 16, height = 8)
             p1 <- DimPlot(dataset, reduction = "umap", group.by = "cell_types")
             p2 <- DimPlot(dataset, reduction = "umap", group.by = "condition")
-            p1 + p2
+            print(p1 + p2)
             dev.off()
         }
     }
