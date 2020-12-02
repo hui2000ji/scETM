@@ -6,14 +6,14 @@ library(argparse)
 library(aricode)
 
 print_memory_usage <- function() {
-    # for (line in readLines('/proc/self/status')) {
-    #     if (substr(line, 1, 6) == 'VmPeak') {
-    #         writeLines(line)
-    #     }
-    #     if (substr(line, 1, 5) == 'VmRSS') {
-    #         writeLines(line)
-    #     }
-    # }
+    for (line in readLines('/proc/self/status')) {
+        if (substr(line, 1, 6) == 'VmPeak') {
+            writeLines(line)
+        }
+        if (substr(line, 1, 5) == 'VmRSS') {
+            writeLines(line)
+        }
+    }
     print(gc())
 }
 
@@ -101,8 +101,7 @@ if (!args$no_eval) {
             integrated <- RunUMAP(integrated, dims = 1:50)
             pdf(file.path(args$ckpt_dir, sprintf("%s_Seurat_%.3f.pdf", fname, res)), width = 16, height = 8)
             p1 <- DimPlot(integrated, reduction = "umap", group.by = "cell_types")
-            #p2 <- DimPlot(integrated, reduction = "umap", group.by = "condition")
-            p2 <- DimPlot(integrated, reduction = "umap", group.by = "batch_indices")
+            p2 <- DimPlot(integrated, reduction = "umap", group.by = "condition")
             print(p1 + p2)
             dev.off()
         }
