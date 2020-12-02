@@ -31,7 +31,7 @@ args <- parser$parse_args()
 fname <- substring(basename(args$h5seurat_path), 1, nchar(args$h5seurat_path) - 9)
 dataset <- LoadH5Seurat(args$h5seurat_path)
 
-args$ckpt_dir <- file.path(args$ckpt_dir, sprintf("%s_Liger%d_%s", fname, args$subset_genes, strftime("%m_%d-%H_%M_%S")))
+args$ckpt_dir <- file.path(args$ckpt_dir, sprintf("%s_Liger%d_%s", fname, args$subset_genes, strftime(Sys.time(),"%m_%d-%H_%M_%S")))
 if (!file.exists((args$ckpt_dir))) {
     mkdir(args$ckpt_dir)
 }
