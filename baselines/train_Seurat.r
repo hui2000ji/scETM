@@ -23,6 +23,7 @@ parser$add_argument("--resolutions", type = "double", nargs = "+", default = c(0
 parser$add_argument("--subset-genes", type = "integer", default = 3000, help = "number of features (genes) to select, 0 for don't select")
 parser$add_argument("--no-draw", action = "store_true", help = "do not draw")
 parser$add_argument("--no-eval", action = "store_true", help = "do not eval")
+parser$add_argument('--ckpt-dir', type = "character", help='path to checkpoint directory', default = file.path('..', 'results'))
 
 args <- parser$parse_args()
 
@@ -30,6 +31,11 @@ fname <- substring(basename(args$h5seurat_path), 1, nchar(args$h5seurat_path) - 
 dataset <- LoadH5Seurat(args$h5seurat_path)
 batches <- names(table(dataset@meta.data$batch_indices))
 print(batches)
+
+args$ckpt_dir <- file.path(args$ckpt_dir, sprintf("%s_Seurat%d_%s", fname, args$subset_genes, strftime("%m_%d-%H_%M_%S")))
+if (!file.exists((args$ckpt_dir))) {
+    mkdir(args$ckpt_dir)
+}
 
 dataset_list <- list()
 start_time <- proc.time()
@@ -90,7 +96,7 @@ if (!args$no_eval) {
         writeLines(sprintf("NMI: %.4f", nmi))
         writeLines(sprintf("# clusters: %d", length(table(seurat))))
         if (!args$no_draw) {
-            pdf(sprintf("figures/%s_Seurat_%.3f.pdf", fname, res), width = 16, height = 8)
+            pdf(file.path(args$ckpt_dir, sprintf("%s_Seurat_%.3f.pdf", fname, res)), width = 16, height = 8)
             dataset <- RunUMAP(dataset, dims = 1:50)
             p1 <- DimPlot(integrated, reduction = "umap", group.by = "cell_types")
             p2 <- DimPlot(integrated, reduction = "umap", group.by = "condition")
