@@ -26,7 +26,7 @@ parser$add_argument("--no-eval", action = "store_true", help = "do not eval")
 
 args <- parser$parse_args()
 
-fname <- substring(args$h5seurat_path, 1, nchar(args$h5seurat_path) - 9)
+fname <- substring(basename(args$h5seurat_path), 1, nchar(args$h5seurat_path) - 9)
 dataset <- LoadH5Seurat(args$h5seurat_path)
 batches <- names(table(dataset@meta.data$batch_indices))
 print(batches)

@@ -31,6 +31,7 @@ from scvae.utilities import (
 )
 
 from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score
+from time import time
 
 
 def train_and_eval(data_set,
@@ -256,60 +257,6 @@ def _setup_model(data_set, model_type=None,
     return model
 
 
-def umap_and_leiden(adata, save_path=False, use_rep=None,
-                    leiden_resolution=0.35, visualize_batch=True, show=False):
-    print(f'\n========== Resolution {leiden_resolution} ==========')
-    color=['batch_indices', 'leiden', 'cell_types'] if visualize_batch else ['leiden', 'cell_types']
-    for item in ('condition', 'y'):
-        if item in adata.obs:
-            color.append(item)
-    sc.tl.umap(adata)
-    sc.tl.leiden(adata, resolution=leiden_resolution)
-    print(f'Resolution: {leiden_resolution}, # clusters: {adata.obs.leiden.nunique()}')
-    print(f'ARI_type: {adjusted_rand_score(adata.obs.cell_types, adata.obs.leiden)}')
-    print(f'NMI_type: {normalized_mutual_info_score(adata.obs.cell_types, adata.obs.leiden)}')
-    if visualize_batch:
-        print(f'ARI_batch: {adjusted_rand_score(adata.obs.batch_indices, adata.obs.leiden)}')
-        print(f'NMI_batch: {normalized_mutual_info_score(adata.obs.batch_indices, adata.obs.leiden)}')
-    sc.pl.umap(adata, color=color, use_raw=False, save=save_path, show=show)
-    if show:
-        plt.show()
-
-
-from sklearn.neighbors import NearestNeighbors
-import pandas as pd
-import scipy
-def entropy_batch_mixing(latent_space, batches, n_neighbors=50, n_pools=50, n_samples_per_pool=100):
-    # code adapted from scGAN
-    print('Calculating batch mixing entropy...', end='\r', flush=True)
-    def entropy(hist_data):
-        counts = pd.Series(hist_data).value_counts()
-        freqs = counts / counts.sum()
-        return (-freqs * np.log(freqs + 1e-20)).sum()
-
-    n_neighbors = min(n_neighbors, len(latent_space) - 1)
-    nne = NearestNeighbors(n_neighbors=1 + n_neighbors, n_jobs=8)
-    nne.fit(latent_space)
-    kmatrix = nne.kneighbors_graph(
-        latent_space) - scipy.sparse.identity(latent_space.shape[0])
-
-    score = 0.
-    for t in range(n_pools):
-        indices = np.random.choice(
-            np.arange(latent_space.shape[0]), size=n_samples_per_pool)
-        score += np.mean(
-            [
-                entropy(
-                    batches[
-                        kmatrix[indices[i]].nonzero()[1]
-                    ]
-                )
-                for i in range(n_samples_per_pool)
-            ]
-        )
-    return score / n_pools
-
-
 if __name__ == '__main__':
     import anndata
     import psutil
@@ -375,6 +322,7 @@ if __name__ == '__main__':
     logging.info(f'Before model instantiation and training: {psutil.Process().memory_info()}')
 
     from scipy.sparse import csr_matrix
+    start_time = time()
     data_set = DataSet(dataset_str,
         title=dataset_str,
         specifications=dict(),
@@ -403,7 +351,8 @@ if __name__ == '__main__':
         minibatch_size=args.batch_size,
         learning_rate=args.lr
     )
-
+    duration = time() - start_time
+    logging.info(f'Duration: {duration:.1f} s ({duration / 60:.1f} min)')
     logging.info(f'After model instantiation and training: {psutil.Process().memory_info()}')
     if args.no_eval:
         import sys

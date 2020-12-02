@@ -45,8 +45,6 @@ def train(model: torch.nn.Module, adata: anndata.AnnData, args, epoch=0,
     tracked_items = defaultdict(list)
 
     next_ckpt_epoch = int(np.ceil(epoch / args.log_every) * args.log_every)
-    start_time = time.time()
-    start_epoch = epoch
 
     while epoch < args.n_epochs:
         print(f'Training: Epoch {int(epoch):5d}/{args.n_epochs:5d}\tNext ckpt: {next_ckpt_epoch:7d}', end='\r')
@@ -85,8 +83,6 @@ def train(model: torch.nn.Module, adata: anndata.AnnData, args, epoch=0,
             logging.info('=' * 10 + f'Epoch {epoch:.0f}' + '=' * 10)
 
             # log time and memory cost
-            duration = time.time() - start_time
-            logging.info(f'Took {duration:.1f} seconds ({duration / 60:.1f} minutes) to train {epoch - start_epoch:.0f} epochs.')
             logging.info(repr(psutil.Process().memory_info()))
             if args.lr_decay:
                 logging.info(f'lr: {args.lr}')
@@ -106,8 +102,6 @@ def train(model: torch.nn.Module, adata: anndata.AnnData, args, epoch=0,
                         os.path.join(args.ckpt_dir, f'opt-{next_ckpt_epoch}'))
 
             next_ckpt_epoch += args.log_every
-            start_time = time.time()
-            start_epoch = epoch
 
     logging.info("Optimization Finished: %s" % args.ckpt_dir)
     sampler.join(0.1)
@@ -183,6 +177,7 @@ if __name__ == '__main__':
     adata = process_dataset(adata, args)
     logging.info(repr(psutil.Process().memory_info()))
 
+    start_time = time.time()
     # build model
     model = scETM(adata, args)
     if torch.cuda.is_available():
@@ -203,3 +198,5 @@ if __name__ == '__main__':
         evaluate(model, adata, args, epoch, args.save_embeddings)
     else:
         train(model, adata, args, epoch)
+    duration = time() - start_time
+    logging.info(f'Duration: {duration:.1f} s ({duration / 60:.1f} min)')
