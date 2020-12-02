@@ -84,13 +84,15 @@ print(proc.time() - start_time)
 print_memory_usage()
 
 if (!args$no_eval) {
+    integrated@meta.data$cell_types <- dataset@meta.data$cell_types
+    integrated@meta.data$condition <- dataset@meta.data$condition
     integrated <- RunPCA(integrated, verbose = FALSE)
     integrated <- FindNeighbors(integrated, k.param = 20, dims = 1:20)
     for (res in args$resolutions) {
         integrated <- FindClusters(integrated, resolution = res)
         seurat <- integrated@meta.data$seurat_clusters
-        nmi <- NMI(seurat, dataset@meta.data$cell_types)
-        ari <- ARI(seurat, dataset@meta.data$cell_types)
+        nmi <- NMI(seurat, integrated@meta.data$cell_types)
+        ari <- ARI(seurat, integrated@meta.data$cell_types)
         writeLines(sprintf("resolution: %.2f", res))
         writeLines(sprintf("ARI: %.4f", ari))
         writeLines(sprintf("NMI: %.4f", nmi))
