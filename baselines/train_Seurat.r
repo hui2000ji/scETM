@@ -97,7 +97,7 @@ if (!args$no_eval) {
         writeLines(sprintf("# clusters: %d", length(table(seurat))))
         if (!args$no_draw) {
             pdf(file.path(args$ckpt_dir, sprintf("%s_Seurat_%.3f.pdf", fname, res)), width = 16, height = 8)
-            integrated <- integrated(dataset, dims = 1:50)
+            integrated <- RunUMAP(integrated, dims = 1:50)
             p1 <- DimPlot(integrated, reduction = "umap", group.by = "cell_types")
             p2 <- DimPlot(integrated, reduction = "umap", group.by = "condition")
             p1 + p2
