@@ -56,7 +56,7 @@ if (!args$no_eval) {
     best_ari <- -1
     best_res <- -1
     for (res in args$resolutions) {
-        dataset <- FindClusters(dataset, resolution = res, algorithm = 4)
+        dataset <- FindClusters(dataset, resolution = res)
         seurat <- dataset@meta.data$seurat_clusters
         nmi <- NMI(seurat, dataset@meta.data$cell_types)
         ari <- ARI(seurat, dataset@meta.data$cell_types)
