@@ -71,7 +71,7 @@ if (!args$no_eval) {
         }
     }
     if (!args$no_draw) {
-        dataset <- RunUMAP(dataset, dims = 1:50, reduction = "iNMF")
+        dataset <- RunUMAP(dataset, dims = 1:20, reduction = "iNMF")
         pdf(
             file.path(args$ckpt_dir, sprintf("%s_Liger_%.3f.pdf", fname, best_res)),
             width = 24,
