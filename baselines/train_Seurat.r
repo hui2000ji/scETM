@@ -88,6 +88,8 @@ if (!args$no_eval) {
     integrated@meta.data <- dataset@meta.data
     integrated <- RunPCA(integrated, verbose = FALSE)
     integrated <- FindNeighbors(integrated, k.param = 20, dims = 1:20)
+    best_ari <- -1
+    best_res <- -1
     for (res in args$resolutions) {
         integrated <- FindClusters(integrated, resolution = res)
         seurat <- integrated@meta.data$seurat_clusters
@@ -97,13 +99,23 @@ if (!args$no_eval) {
         writeLines(sprintf("ARI: %.4f", ari))
         writeLines(sprintf("NMI: %.4f", nmi))
         writeLines(sprintf("# clusters: %d", length(table(seurat))))
-        if (!args$no_draw) {
-            integrated <- RunUMAP(integrated, dims = 1:50)
-            pdf(file.path(args$ckpt_dir, sprintf("%s_Seurat_%.3f.pdf", fname, res)), width = 16, height = 8)
-            p1 <- DimPlot(integrated, reduction = "umap", group.by = "cell_types")
-            p2 <- DimPlot(integrated, reduction = "umap", group.by = "condition")
-            print(p1 + p2)
-            dev.off()
+        if (ari > best_ari) {
+            dataset@meta.data$best_clusters <- seurat
+            best_ari <- ari
+            best_res <- res
         }
+    }
+    if (!args$no_draw) {
+        integrated <- RunUMAP(integrated, dims = 1:50)
+        pdf(
+            file.path(args$ckpt_dir, sprintf("%s_Seurat_%.3f.pdf", fname, best_res)),
+            width = 24,
+            height = 8
+        )
+        p1 <- DimPlot(integrated, reduction = "umap", group.by = "cell_types")
+        p2 <- DimPlot(integrated, reduction = "umap", group.by = "best_clusters")
+        p3 <- DimPlot(integrated, reduction = "umap", group.by = "batch_indices")
+        print(p1 + p2 + p3)
+        dev.off()
     }
 }

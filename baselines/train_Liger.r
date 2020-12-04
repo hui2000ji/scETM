@@ -53,8 +53,10 @@ print_memory_usage()
 
 if (!args$no_eval) {
     dataset <- FindNeighbors(dataset, reduction = "iNMF", k.param = 20, dims = 1:20)
+    best_ari <- -1
+    best_res <- -1
     for (res in args$resolutions) {
-        dataset <- FindClusters(dataset, resolution = res)
+        dataset <- FindClusters(dataset, resolution = res, algorithm = 4)
         seurat <- dataset@meta.data$seurat_clusters
         nmi <- NMI(seurat, dataset@meta.data$cell_types)
         ari <- ARI(seurat, dataset@meta.data$cell_types)
@@ -62,13 +64,23 @@ if (!args$no_eval) {
         writeLines(sprintf("ARI: %.4f", ari))
         writeLines(sprintf("NMI: %.4f", nmi))
         writeLines(sprintf("# clusters: %d", length(table(seurat))))
-        if (!args$no_draw) {
-            dataset <- RunUMAP(dataset, dims = 1:50)
-            pdf(file.path(args$ckpt_dir, sprintf("%s_Liger_%.3f.pdf", fname, res)), width = 16, height = 8)
-            p1 <- DimPlot(dataset, reduction = "umap", group.by = "cell_types")
-            p2 <- DimPlot(dataset, reduction = "umap", group.by = "condition")
-            print(p1 + p2)
-            dev.off()
+        if (ari > best_ari) {
+            dataset@meta.data$best_clusters <- seurat
+            best_ari <- ari
+            best_res <- res
         }
+    }
+    if (!args$no_draw) {
+        dataset <- RunUMAP(dataset, dims = 1:50, reduction = "iNMF")
+        pdf(
+            file.path(args$ckpt_dir, sprintf("%s_Liger_%.3f.pdf", fname, best_res)),
+            width = 24,
+            height = 8
+        )
+        p1 <- DimPlot(dataset, reduction = "umap", group.by = "cell_types")
+        p2 <- DimPlot(dataset, reduction = "umap", group.by = "best_clusters")
+        p3 <- DimPlot(dataset, reduction = "umap", group.by = "batch_indices")
+        print(p1 + p2 + p3)
+        dev.off()
     }
 }

@@ -198,5 +198,5 @@ if __name__ == '__main__':
         evaluate(model, adata, args, epoch, args.save_embeddings)
     else:
         train(model, adata, args, epoch)
-    duration = time() - start_time
+    duration = time.time() - start_time
     logging.info(f'Duration: {duration:.1f} s ({duration / 60:.1f} min)')
