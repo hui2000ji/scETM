@@ -27,13 +27,13 @@ parser$add_argument('--ckpt-dir', type = "character", help='path to checkpoint d
 
 args <- parser$parse_args()
 
-fname <- basename(args$h5seurat_path)
-fname <- substring(fname, 1, nchar(fname) - 9)
+dataset_str <- basename(args$h5seurat_path)
+dataset_str <- substring(dataset_str, 1, nchar(dataset_str) - 9)
 dataset <- LoadH5Seurat(args$h5seurat_path)
 batches <- names(table(dataset@meta.data$batch_indices))
 print(batches)
 
-args$ckpt_dir <- file.path(args$ckpt_dir, sprintf("%s_Seurat%d_%s", fname, args$subset_genes, strftime(Sys.time(),"%m_%d-%H_%M_%S")))
+args$ckpt_dir <- file.path(args$ckpt_dir, sprintf("%s_Seurat%d_%s", dataset_str, args$subset_genes, strftime(Sys.time(),"%m_%d-%H_%M_%S")))
 if (!dir.exists((args$ckpt_dir))) {
     dir.create(args$ckpt_dir)
 }
@@ -108,7 +108,7 @@ if (!args$no_eval) {
     if (!args$no_draw) {
         integrated <- RunUMAP(integrated, dims = 1:50)
         pdf(
-            file.path(args$ckpt_dir, sprintf("%s_Seurat_%.3f.pdf", fname, best_res)),
+            file.path(args$ckpt_dir, sprintf("%s_Seurat_%.3f.pdf", dataset_str, best_res)),
             width = 24,
             height = 8
         )
@@ -119,3 +119,7 @@ if (!args$no_eval) {
         dev.off()
     }
 }
+
+fpath <- file.path(args$ckpt_dir, sprintf("%s_Seurat.h5seurat", dataset_str))
+SaveH5Seurat(integrated, file = fpath, overwrite = T)
+Convert(fpath, dest = "h5ad", overwrite = T)
