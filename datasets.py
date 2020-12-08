@@ -6,6 +6,9 @@ import logging
 
 
 def process_dataset(adata: anndata.AnnData, args):
+    if args.subset_genes:
+        sc.pp.highly_variable_genes(adata, n_top_genes=args.subset_genes, flavor='seurat_v3')
+        adata = adata[:, adata.var.highly_variable]
     if args.norm_cell_read_counts:
         sc.pp.normalize_total(adata, target_sum=1e4)
     if args.quantile_norm:

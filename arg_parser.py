@@ -53,12 +53,13 @@ parser.add_argument('--pathway-csv-path', type=str, default='', help='path to th
 # Dataset preprocessing parameters
 def add_preprocessing_arguments(parser):
     """
-    Add parameters '--clip', '--quantile-norm', '--log1p', '--norm-cell-read-counts'.
+    Add parameters '--clip', '--quantile-norm', '--log1p', '--norm-cell-read-counts', '--subset-genes'.
     """
     parser.add_argument('--clip', type=int, default=0, help='enable dataset clipping, 0 for not clipping')
     parser.add_argument('--quantile-norm', action='store_true', help='enable quantile normalization for cell-gene matrix')
     parser.add_argument('--log1p', action='store_true', help='log1p transform the dataset')
     parser.add_argument('--norm-cell-read-counts', action='store_true', help='whether to normalize cell read counts')
+    parser.add_argument('--subset-genes', type=int, default=0, help='number of top variable genes to select, 0 for all genes (no selection)')
 add_preprocessing_arguments(parser)
 
 # Embedding plotting parameters

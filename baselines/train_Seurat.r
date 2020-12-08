@@ -54,20 +54,25 @@ for (i in seq_len(length(batches))) {
         object = dataset_list[[i]],
         verbose = FALSE
     )
-    if (args$subset_genes) {
-        dataset_list[[i]] <- FindVariableFeatures(
-            object = dataset_list[[i]],
-            selection.method = "vst",
-            nfeatures = args$subset_genes,
-            verbose = FALSE
-        )
-    }
+    # if (args$subset_genes) {
+    #     dataset_list[[i]] <- FindVariableFeatures(
+    #         object = dataset_list[[i]],
+    #         selection.method = "vst",
+    #         nfeatures = args$subset_genes,
+    #         verbose = FALSE
+    #     )
+    # }
+}
+if (args$subset_genes) {
+    anchor_features <- args$subset_genes
+} else {
+    anchor_features <- rownames(dataset@assays$RNA@data)
 }
 
 anchors <- FindIntegrationAnchors(
     object.list = dataset_list,
-    dims = 1:30# ,
-    # anchor.features = rownames(dataset_list[[1]]@assays$RNA@data)
+    dims = 1:30,
+    anchor.features = anchor_features
 )
 
 integrated <- IntegrateData(
