@@ -37,7 +37,9 @@ class scETM(BaseCellModel):
 
         self.rho_fixed, self.rho = None, None
         if 'gene_emb' in adata.varm:
-            self.rho_fixed = torch.FloatTensor(adata.varm['gene_emb'].T).to(device=device)
+            rho_fixed = adata.varm['gene_emb'].T  # L x G
+            rho_fixed = (rho_fixed - rho_fixed.mean(0)) / rho_fixed.std(0)
+            self.rho_fixed = torch.FloatTensor(rho_fixed).to(device=device)
             if self.gene_emb_dim:
                 self.rho = nn.Parameter(torch.randn(self.gene_emb_dim, self.n_genes))
         else:
