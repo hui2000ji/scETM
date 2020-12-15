@@ -50,7 +50,7 @@ $ python train.py \
 
 2. pathway-informed scETM
 
-The gene-by-pathway matrix (with row and column names) is stored in a csv file specified by the "pathway-csv-path" argument. If it is desired to fix $\rho$ during training, let "trainable-gene-emb-dim" be zero. In this case, the gene set used to train the model would be the intersection of the genes in the scRNA-seq data and the genes in the gene-by-pathway matrix. Otherwise, if "trainable-gene-emb-dim" is set to a positive value, all the genes in the scRNA-seq data would be keeped.
+The gene-by-pathway matrix (with row and column names) is stored in a csv file specified by the "pathway-csv-path" argument. The gene names in the gene-by-pathway matrix must correspond to those in the scRNA-seq data for the program to merge the two sources. If it is desired to fix the gene embedding matrix $\rho$ during training, let "trainable-gene-emb-dim" be zero. In this case, the gene set used to train the model would be the intersection of the genes in the scRNA-seq data and the genes in the gene-by-pathway matrix. Otherwise, if "trainable-gene-emb-dim" is set to a positive value, all the genes in the scRNA-seq data would be keeped.
 ```bash
 $ python train.py \
  --model scETM \
