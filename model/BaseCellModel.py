@@ -11,7 +11,7 @@ class BaseCellModel(nn.Module):
                  device=torch.device(
                      "cuda:0" if torch.cuda.is_available() else "cpu")):
         super().__init__()
-        self.gene_emb_dim = args.gene_emb_dim
+        self.trainable_gene_emb_dim = args.trainable_gene_emb_dim
         if not args.no_eval:
             self.n_labels = adata.obs.cell_types.nunique()
         self.device = device

@@ -8,14 +8,16 @@ This repository includes detailed instructions for installation and requirements
 
 ## Contents ##
 
-1. [Model Overview](#overview)
-2. [Installation](#installation)
-3. [Usage](#usage)
-  - [Required data](#requireddata)
-  - [Example usage](#usage)
-4. [Benchmarking](#benchmarking)
-  - [Data simulation](#simulation)
-  - [Running baseline methods](#baseline)
+- [scETM: single-cell Embedded Topic Model](#scetm-single-cell-embedded-topic-model)
+  - [Contents](#contents)
+  - [1 Model Overview](#1-model-overview)
+  - [2 Installation](#2-installation)
+  - [3 Usage](#3-usage)
+    - [Required data](#required-data)
+    - [Example usage](#example-usage)
+  - [4 Benchmarking](#4-benchmarking)
+    - [Data simulation](#data-simulation)
+    - [Running baseline methods](#running-baseline-methods)
 
 
 <a name="overview"></a>
@@ -38,16 +40,26 @@ scETM requires a cells-by-genes matrix as input, in the format of an AnnData obj
 <a name="usage"></a>
 ### Example usage
 1. scETM
-```
+```bash
 $ python train.py \
  --model scETM \
  --norm-cells \
- --n-topics 100 \
+ --batch-scaling \
  --h5ad-path data/MousePancreas.h5ad
 ```
 
 2. pathway-informed scETM
-  - to be added by Huiyu
+
+The gene-by-pathway matrix (with row and column names) is stored in a csv file specified by the "pathway-csv-path" argument. If it is desired to fix $\rho$ during training, let "trainable-gene-emb-dim" be zero. In this case, the gene set used to train the model would be the intersection of the genes in the scRNA-seq data and the genes in the gene-by-pathway matrix. Otherwise, if "trainable-gene-emb-dim" is set to a positive value, all the genes in the scRNA-seq data would be keeped.
+```bash
+$ python train.py \
+ --model scETM \
+ --norm-cells \
+ --batch-scaling \
+ --h5ad-path data/MousePancreas.h5ad \
+ --pathway-csv-path data/pathdipv4_morethan5.csv \
+ --trainable-gene-emb-dim 0  # fixing the gene embedding \rho
+```
 
 <a name="benchmarking"></a>
 ## 4 Benchmarking

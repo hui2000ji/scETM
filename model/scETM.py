@@ -42,12 +42,12 @@ class scETM(BaseCellModel):
             rho_fixed_std[rho_fixed_std == 0.] = 1
             rho_fixed = (rho_fixed - rho_fixed.mean(0)) / rho_fixed_std
             self.rho_fixed = torch.FloatTensor(rho_fixed).to(device=device)
-            if self.gene_emb_dim:
-                self.rho = nn.Parameter(torch.randn(self.gene_emb_dim, self.n_genes))
+            if self.trainable_gene_emb_dim:
+                self.rho = nn.Parameter(torch.randn(self.trainable_gene_emb_dim, self.n_genes))
         else:
-            self.rho = nn.Parameter(torch.randn(self.gene_emb_dim, self.n_genes))
+            self.rho = nn.Parameter(torch.randn(self.trainable_gene_emb_dim, self.n_genes))
 
-        self.alpha = nn.Parameter(torch.randn(self.n_topics, self.gene_emb_dim + (adata.varm['gene_emb'].shape[1] if self.rho_fixed is not None else 0)))
+        self.alpha = nn.Parameter(torch.randn(self.n_topics, self.trainable_gene_emb_dim + (adata.varm['gene_emb'].shape[1] if self.rho_fixed is not None else 0)))
         if self.batch_scaling:
             self.gene_bias = nn.Parameter(torch.randn(self.n_batches, self.n_genes))
         

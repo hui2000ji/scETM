@@ -28,8 +28,8 @@ def process_dataset(adata: anndata.AnnData, args):
 
     if hasattr(args, 'pathway_csv_path') and args.pathway_csv_path:
         mat = pd.read_csv(args.pathway_csv_path, index_col=0)
-        genes = sorted(list(set(mat.index).intersection(adata.var_names)))
-        if args.gene_emb_dim == 0:
+        if args.trainable_gene_emb_dim == 0:
+            genes = sorted(list(set(mat.index).intersection(adata.var_names)))
             logging.info(f'Using {mat.shape[1]}-dim fixed gene embedding for {len(genes)} genes appeared in both the gene-pathway matrix and the dataset.')
             adata = adata[:, genes]
             adata.varm['gene_emb'] = mat.loc[genes, :].values
