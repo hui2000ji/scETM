@@ -13,6 +13,7 @@ class scETM(BaseCellModel):
                      "cuda:0" if torch.cuda.is_available() else "cpu")):
         super().__init__(adata, args)
 
+        self.normalize_beta = args.model == 'ETM'
         self.n_topics = args.n_topics
         self.normed_loss = args.normed_loss
         self.norm_cells = args.norm_cells
@@ -118,13 +119,17 @@ class scETM(BaseCellModel):
         rho = torch.cat(rhos, dim=0) if len(rhos) > 1 else rhos[0]
         beta = self.alpha @ rho
 
-        recon_logit = torch.mm(theta, beta)  # [batch_size, n_genes]
-        if self.global_bias is not None:
-            recon_logit += self.global_bias
-        if self.batch_scaling:
-            recon_logit += self.gene_bias[data_dict['batch_indices']]
+        if self.normalize_beta:
+            recon = torch.mm(theta, F.softmax(beta, dim=-1)) + 1e-30
+            nll = (-recon.log() * self.mask_gene_expression(normed_cells if self.normed_loss else cells)).sum(-1).mean()
+        else:
+            recon_logit = torch.mm(theta, beta)  # [batch_size, n_genes]
+            if self.global_bias is not None:
+                recon_logit += self.global_bias
+            if self.batch_scaling:
+                recon_logit += self.gene_bias[data_dict['batch_indices']]
+            nll = (-F.log_softmax(recon_logit, dim=-1) * self.mask_gene_expression(normed_cells if self.normed_loss else cells)).sum(-1).mean()
 
-        nll = (-F.log_softmax(recon_logit, dim=-1) * self.mask_gene_expression(normed_cells if self.normed_loss else cells)).sum(-1).mean()
         kl_delta = self.get_kl(mu_q_delta, logsigma_q_delta).mean()
         loss = nll + hyper_param_dict['beta'] * kl_delta
         tracked_items = dict(loss=loss, nll=nll, kl_delta=kl_delta)
