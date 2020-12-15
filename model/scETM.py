@@ -40,7 +40,7 @@ class scETM(BaseCellModel):
             rho_fixed = adata.varm['gene_emb'].T  # L x G
             rho_fixed_std = rho_fixed.std(1)
             rho_fixed_std[rho_fixed_std == 0.] = 1
-            rho_fixed = (rho_fixed - rho_fixed.mean(1)) / rho_fixed_std
+            rho_fixed = (rho_fixed - rho_fixed.mean(1, keepdims=True)) / rho_fixed_std
             self.rho_fixed = torch.FloatTensor(rho_fixed).to(device=device)
             if self.trainable_gene_emb_dim:
                 self.rho = nn.Parameter(torch.randn(self.trainable_gene_emb_dim, self.n_genes))
