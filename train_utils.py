@@ -39,6 +39,7 @@ def get_train_instance_name(args):
             ('normRdCnt', args.norm_cell_read_counts),
             (args.log_str, args.log_str),
             ('batchScaling', args.batch_scaling),
+            ('globalBias', args.global_bias),
             ('normCells', args.norm_cells),
             ('normedLoss', args.normed_loss)
     ):
