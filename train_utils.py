@@ -23,7 +23,8 @@ def get_train_instance_name(args):
             ('KLWeightAnneal', args.n_warmup_epochs, 300),
             ('inputBatchID', args.input_batch_id),
             ('maskRatio', args.mask_ratio, 0.2),
-            ('supervised', args.max_supervised_weight, 0.)
+            ('supervised', args.max_supervised_weight, 0.),
+            ('trnGeneEmbDim', args.trainable_gene_emb_dim, 300)
     ):
         if len(tuple_) == 2:
             name, numeric_ = tuple_
