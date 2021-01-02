@@ -328,7 +328,7 @@ if __name__ == '__main__':
         specifications=dict(),
         values=csr_matrix(adata.X),
         labels=np.asarray_chkfinite(adata.obs.cell_types) if not args.no_eval else np.zeros_like(adata.obs.batch_indices),
-        batch_indces=np.asarray_chkfinite(adata.obs.batch_indices),
+        batch_indices=np.asarray_chkfinite(adata.obs.batch_indices),
         feature_names=np.asarray_chkfinite(adata.var_names)
     )
 
