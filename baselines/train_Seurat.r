@@ -96,7 +96,7 @@ if (!args$no_eval) {
     best_ari <- -1
     best_res <- -1
     for (res in args$resolutions) {
-        integrated <- FindClusters(integrated)
+        integrated <- FindClusters(integrated, resolution = res)
         seurat <- integrated@meta.data$seurat_clusters
         nmi <- NMI(seurat, integrated@meta.data$cell_types)
         ari <- ARI(seurat, integrated@meta.data$cell_types)

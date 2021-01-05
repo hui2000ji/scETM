@@ -49,7 +49,6 @@ logger.setLevel(logging.INFO)
 adata = process_dataset(adata, args)
 
 start_time = time()
-logging.info(f'Before model instantiation and training: {psutil.Process().memory_info()}')
 
 adatas = []
 for batch in adata.obs.batch_indices.unique():
@@ -57,6 +56,8 @@ for batch in adata.obs.batch_indices.unique():
     if isinstance(part.X, csr_matrix):
         part.X = np.array(part.X.todense())
     adatas.append(part)
+adata = anndata.concat(adatas)
+logging.info(f'Before model instantiation and training: {psutil.Process().memory_info()}')
     
 # Integration and batch correction.
 integrated = scanorama.integrate_scanpy(adatas, dimred=args.dim_red)
