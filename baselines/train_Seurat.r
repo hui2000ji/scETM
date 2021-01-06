@@ -6,12 +6,14 @@ library(argparse)
 library(aricode)
 
 print_memory_usage <- function() {
-    for (line in readLines('/proc/self/status')) {
-        if (substr(line, 1, 6) == 'VmPeak') {
-            writeLines(line)
-        }
-        if (substr(line, 1, 5) == 'VmRSS') {
-            writeLines(line)
+    if (file.exists('/proc/self/status')) {
+        for (line in readLines('/proc/self/status')) {
+            if (substr(line, 1, 6) == 'VmPeak') {
+                writeLines(line)
+            }
+            if (substr(line, 1, 5) == 'VmRSS') {
+                writeLines(line)
+            }
         }
     }
     print(gc())
@@ -47,7 +49,8 @@ for (i in seq_len(length(batches))) {
     dataset_list[[i]] <- CreateSeuratObject(
         counts = matrix_data,
         min.cell = 0,
-        min.features = 0
+        min.features = 0,
+        meta.data = dataset@meta.data[dataset@meta.data$batch_indices == batches[[i]],]
     )
     writeLines(sprintf("<%d> batch_name: %s; shape: %s", i, batches[[i]], paste(dim(dataset_list[[i]]), collapse = ' ')))
     dataset_list[[i]] <- NormalizeData(
@@ -90,7 +93,6 @@ print(proc.time() - start_time)
 print_memory_usage()
 
 if (!args$no_eval) {
-    integrated@meta.data <- dataset@meta.data
     integrated <- RunPCA(integrated, verbose = FALSE)
     integrated <- FindNeighbors(integrated, k.param = 20, dims = 1:20)
     best_ari <- -1

@@ -7,12 +7,14 @@ library(aricode)
 library(argparse)
 
 print_memory_usage <- function() {
-    for (line in readLines('/proc/self/status')) {
-        if (substr(line, 1, 6) == 'VmPeak') {
-            writeLines(line)
-        }
-        if (substr(line, 1, 5) == 'VmRSS') {
-            writeLines(line)
+    if (file.exists('/proc/self/status')) {
+        for (line in readLines('/proc/self/status')) {
+            if (substr(line, 1, 6) == 'VmPeak') {
+                writeLines(line)
+            }
+            if (substr(line, 1, 5) == 'VmRSS') {
+                writeLines(line)
+            }
         }
     }
     print(gc())
