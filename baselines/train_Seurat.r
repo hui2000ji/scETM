@@ -105,7 +105,7 @@ if (!args$no_eval) {
         writeLines(sprintf("NMI: %.4f", nmi))
         writeLines(sprintf("# clusters: %d", length(table(seurat))))
         if (ari > best_ari) {
-            dataset@meta.data$best_clusters <- seurat
+            integrated@meta.data$best_clusters <- seurat
             best_ari <- ari
             best_res <- res
         }
