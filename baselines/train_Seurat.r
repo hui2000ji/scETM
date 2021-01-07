@@ -41,9 +41,6 @@ if (!dir.exists((args$ckpt_dir))) {
 }
 
 dataset_list <- list()
-start_time <- proc.time()
-print_memory_usage()
-
 for (i in seq_len(length(batches))) {
     matrix_data <- dataset@assays$RNA@data[, dataset@meta.data$batch_indices == batches[[i]]]
     dataset_list[[i]] <- CreateSeuratObject(
@@ -53,6 +50,12 @@ for (i in seq_len(length(batches))) {
         meta.data = dataset@meta.data[dataset@meta.data$batch_indices == batches[[i]],]
     )
     writeLines(sprintf("<%d> batch_name: %s; shape: %s", i, batches[[i]], paste(dim(dataset_list[[i]]), collapse = ' ')))
+}
+
+start_time <- proc.time()
+print_memory_usage()
+
+for (i in seq_len(length(batches))) {
     dataset_list[[i]] <- NormalizeData(
         object = dataset_list[[i]],
         verbose = FALSE
@@ -66,6 +69,7 @@ for (i in seq_len(length(batches))) {
     #     )
     # }
 }
+
 if (args$subset_genes) {
     anchor_features <- args$subset_genes
 } else {

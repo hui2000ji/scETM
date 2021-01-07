@@ -101,6 +101,7 @@ def train(model: torch.nn.Module, adata: anndata.AnnData, args, epoch=0,
                 torch.save(optimizer.state_dict(),
                         os.path.join(args.ckpt_dir, f'opt-{next_ckpt_epoch}'))
 
+            logging.info('=' * 10 + f'End of evaluation' + '=' * 10)
             next_ckpt_epoch += args.log_every
 
     logging.info("Optimization Finished: %s" % args.ckpt_dir)
