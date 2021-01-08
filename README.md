@@ -28,7 +28,12 @@ This repository includes detailed instructions for installation and requirements
 
 <a name="installation"></a>
 ## 2 Installation
-- TODO: add the requirements.txt
+Python version: 3.7+
+After cloning this repository, the required packages may be installed by:
+```
+cd scETM
+pip install -r requirements.txt
+```
 
 <a name="usage"></a>
 ## 3 Usage
@@ -36,6 +41,8 @@ This repository includes detailed instructions for installation and requirements
 <a name="data"></a>
 ### Required data
 scETM requires a cells-by-genes matrix as input, in the format of an AnnData object. Detailed description about AnnData can be found [here](https://anndata.readthedocs.io/en/latest/).
+
+Note that the evaluation script requires the input to have following fields in the AnnData.obs: 'batch_indices','cell_types'
 
 <a name="usage"></a>
 ### Example usage
@@ -45,7 +52,9 @@ $ python train.py \
  --model scETM \
  --norm-cells \
  --batch-scaling \
- --h5ad-path data/MousePancreas.h5ad
+ --h5ad-path data/MousePancreas.h5ad \
+ --n-epochs 800 \
+ --no-eval # turn off evaluation (needed when input does not contain ground truth labels)
 ```
 
 2. pathway-informed scETM
