@@ -45,7 +45,10 @@ scETM requires a cells-by-genes matrix as input, in the format of an AnnData obj
 Note that the evaluation script requires the input to have following fields in the AnnData.obs: 'batch_indices','cell_types'
 
 <a name="usage"></a>
-### Example usage
+### usage
+An introductory tutorial can be found in [here](/notebooks/scETM%20introductory%20tutorial.ipynb). 
+There are two flavors, scETM and pathway-informed scETM (p-scETM). The difference is that, in p-scETM, the gene embedding \rho is fixed to a pathways-by-genes matrix, which can be downloaded from the [pathDIP4 pathway database](http://ophid.utoronto.ca/pathDIP/Download.jsp). We only keep pathways that contain more than 5 genes. 
+
 1. scETM
 ```bash
 $ python train.py \
@@ -54,19 +57,24 @@ $ python train.py \
  --batch-scaling \
  --h5ad-path data/MousePancreas.h5ad \
  --n-epochs 800 \
- --no-eval # turn off evaluation (needed when input does not contain ground truth labels)
+ --log-every 400 \
+ --ckpt-dir results/ \
+ --save-embeddings
 ```
 
-2. pathway-informed scETM
-
-The gene-by-pathway matrix (with row and column names) is stored in a csv file specified by the "pathway-csv-path" argument. The gene names in the gene-by-pathway matrix must correspond to those in the scRNA-seq data for the program to merge the two sources. If it is desired to fix the gene embedding matrix $\rho$ during training, let "trainable-gene-emb-dim" be zero. In this case, the gene set used to train the model would be the intersection of the genes in the scRNA-seq data and the genes in the gene-by-pathway matrix. Otherwise, if "trainable-gene-emb-dim" is set to a positive value, all the genes in the scRNA-seq data would be keeped.
+2. p-scETM
+The gene-by-pathway matrix (with row and column names) is stored in a csv file specified by the "pathway-csv-path" argument. The gene names in the gene-by-pathway matrix must correspond to those in the scRNA-seq data for the program to merge the two sources. If it is desired to fix the gene embedding matrix $\rho$ during training, let "trainable-gene-emb-dim" be zero. In this case, the gene set used to train the model would be the intersection of the genes in the scRNA-seq data and the genes in the gene-by-pathway matrix. Otherwise, if "trainable-gene-emb-dim" is set to a positive value, all the genes in the scRNA-seq data would be kept.
 ```bash
 $ python train.py \
  --model scETM \
  --norm-cells \
  --batch-scaling \
- --h5ad-path data/MousePancreas.h5ad \
+ --h5ad-path data/HumanPancreas.h5ad \
  --pathway-csv-path data/pathdipv4_morethan5.csv \
+ --n-epochs 800 \
+ --log-every 400 \
+ --ckpt-dir results/ \
+ --save-embeddings \
  --trainable-gene-emb-dim 0  # fixing the gene embedding \rho
 ```
 
