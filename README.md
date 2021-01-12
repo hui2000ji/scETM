@@ -37,6 +37,7 @@ pip install -r requirements.txt
 
 <a name="usage"></a>
 ## 3 Usage
+**A step-by-step scETM tutorial can be found in [here](/notebooks/scETM%20introductory%20tutorial.ipynb).**
 
 <a name="data"></a>
 ### Required data
@@ -44,9 +45,7 @@ scETM requires a cells-by-genes matrix as input, in the format of an AnnData obj
 
 Note that the evaluation script requires the input to have following fields in the AnnData.obs: 'batch_indices','cell_types'
 
-<a name="usage"></a>
-### usage
-An introductory tutorial can be found in [here](/notebooks/scETM%20introductory%20tutorial.ipynb). 
+### scETM and p-scETM
 There are two flavors, scETM and pathway-informed scETM (p-scETM). The difference is that, in p-scETM, the gene embedding \rho is fixed to a pathways-by-genes matrix, which can be downloaded from the [pathDIP4 pathway database](http://ophid.utoronto.ca/pathDIP/Download.jsp). We only keep pathways that contain more than 5 genes. 
 
 1. scETM
