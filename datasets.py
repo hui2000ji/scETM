@@ -40,6 +40,8 @@ def process_dataset(adata: anndata.AnnData, args):
     if hasattr(args, 'color_by') and (hasattr(args, 'no_draw') and not args.no_draw) and (hasattr(args, 'no_eval') and not args.no_eval):
         for col_name in args.color_by:
             assert col_name in adata.obs, f"{col_name} in args.color_by but not in adata.obs"
+    if hasattr(args, 'max-supervised-weight') and args.max_supervised_weight:
+        assert 'cell_types' in adata.obs, f"For supervised learning, the 'cell_types' column must be present in the adata.obs object."
 
     logging.info(f'adata: {adata}')
     if 'batch_indices' in adata.obs:

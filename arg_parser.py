@@ -19,7 +19,7 @@ parser.add_argument('--batch-scaling', action='store_true', help='enable batch-s
 parser.add_argument('--global-bias', action='store_true', help='enable global gene bias')
 
 # Loss parameters
-parser.add_argument('--max-supervised-weight', type=float, default=0, help='weight of supervsied loss, 0 to turn off supervised components')
+parser.add_argument('--max-supervised-weight', type=float, default=0., help='weight of supervsied loss, 0 to turn off supervised components')
 parser.add_argument('--max-kl-weight', type=float, default=1., help='max weight for kl divergence')
 parser.add_argument('--min-kl-weight', type=float, default=0., help='min weight for kl divergence')
 parser.add_argument('--n-warmup-epochs', type=int, default=300, help='linear annealing of kl divergence loss')
@@ -72,7 +72,7 @@ def add_plotting_arguments(parser):
     # plot or not
     parser.add_argument('--no-draw', action='store_true', help='do not draw')
     # draw_embeddings
-    parser.add_argument('--color-by', nargs='*', default=['cell_types', 'batch_indices'],
+    parser.add_argument('--color-by', nargs='*', default=['batch_indices', 'cell_types'],
                         help='columns of adata.obs that will be visualized at each evaluation')
     parser.add_argument('--n-neighbors', type=int, default=15, help='number of neighbors to compute UMAP')
     parser.add_argument('--min_dist', type=float, default=0.3, help='minimum distance b/t UMAP embedded points')

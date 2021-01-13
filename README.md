@@ -14,10 +14,8 @@ This repository includes detailed instructions for installation and requirements
   - [2 Installation](#2-installation)
   - [3 Usage](#3-usage)
     - [Required data](#required-data)
-    - [Example usage](#example-usage)
+    - [scETM and p-scETM](#scetm-and-p-scetm)
   - [4 Benchmarking](#4-benchmarking)
-    - [Data simulation](#data-simulation)
-    - [Running baseline methods](#running-baseline-methods)
 
 
 <a name="overview"></a>
@@ -43,7 +41,7 @@ pip install -r requirements.txt
 ### Required data
 scETM requires a cells-by-genes matrix as input, in the format of an AnnData object. Detailed description about AnnData can be found [here](https://anndata.readthedocs.io/en/latest/).
 
-Note that the evaluation script requires the input to have following fields in the AnnData.obs: 'batch_indices','cell_types'
+Note that the evaluation script requires the input to have following fields in the AnnData.obs: 'batch_indices', 'cell_types'
 
 ### scETM and p-scETM
 There are two flavors, scETM and pathway-informed scETM (p-scETM). The difference is that, in p-scETM, the gene embedding \rho is fixed to a pathways-by-genes matrix, which can be downloaded from the [pathDIP4 pathway database](http://ophid.utoronto.ca/pathDIP/Download.jsp). We only keep pathways that contain more than 5 genes. 

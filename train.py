@@ -115,7 +115,10 @@ def evaluate(model: scETM, adata: anndata.AnnData, args, epoch,
     embeddings = model.get_cell_emb_weights()
     for emb_name, emb in embeddings.items():
         adata.obsm[emb_name] = emb
-    cluster_key = clustering('delta', adata, args)
+    if 'cell_types' in adata.obs:
+        cluster_key = clustering('delta', adata, args)
+    else:
+        cluster_key = None
 
     # Only calc BE at last step
     if adata.obs.batch_indices.nunique() > 1 and not args.no_be and \
@@ -124,7 +127,7 @@ def evaluate(model: scETM, adata: anndata.AnnData, args, epoch,
             logging.info(f'{name}_BE: {entropy_batch_mixing(latent_space, adata.obs.batch_indices):7.4f}')
 
     if not args.no_draw:
-        color_by = [cluster_key] + args.color_by
+        color_by = args.color_by if cluster_key is None else ([cluster_key] + args.color_by)
         for emb_name, emb in embeddings.items():
             draw_embeddings(adata=adata, fname=f'{args.dataset_str}_{args.model}_{emb_name}_epoch{epoch}.pdf',
                 args=args, color_by=color_by, use_rep=emb_name)
