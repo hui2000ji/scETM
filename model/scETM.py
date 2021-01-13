@@ -34,6 +34,7 @@ class scETM(BaseCellModel):
 
         self.supervised = args.max_supervised_weight > 0
         if self.supervised:
+            self.n_labels = adata.obs.cell_types.nunique()
             self.cell_type_clf = self.get_fully_connected_layers(self.n_topics, self.n_labels, args)
 
         self.rho_fixed, self.rho = None, None
