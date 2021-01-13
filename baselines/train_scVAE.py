@@ -370,5 +370,5 @@ if __name__ == '__main__':
         logging.info(f'BE: {entropy_batch_mixing(latent, adata.obs.batch_indices):7.4f}')
     if not args.no_draw:
         color_by = [cluster_key] + args.color_by
-        draw_embeddings(adata=adata, fname=f'{dataset_str}_{args.model}.pdf',
+        draw_embeddings(adata=adata, fname=f'{dataset_str}_{args.model}_{cluster_key}.pdf',
             args=args, color_by=color_by, use_rep='latent')
