@@ -1,0 +1,65 @@
+INFO [2021-01-12 14:05:07,852]: argv: train.py --model scETM --norm-cells --batch-scaling --h5ad-path data/MousePancreas.h5ad --n-epochs 800 --log-every 400 --ckpt-dir results/ --save-embeddings
+INFO [2021-01-12 14:05:07,852]: ckpt_dir: results/MousePancreas_scETM_batchScaling_normCells_time01_12-14_05_07
+INFO [2021-01-12 14:05:07,852]: args: Namespace(anndata_path='', batch_scaling=True, batch_size=2000, ckpt_dir='results/MousePancreas_scETM_batchScaling_normCells_time01_12-14_05_07', clip=0, clustering_method='leiden', color_by=['cell_types', 'batch_indices'], dataset_str='MousePancreas', dpi_save=250, dpi_show=120, dropout_prob=0.1, eval=False, figsize=(10, 10), fix_resolutions=False, fontsize=10, global_bias=False, h5ad_path='data/MousePancreas.h5ad', hidden_sizes=(256, 128), input_batch_id=False, log1p=False, log_every=400, log_str='', lr=0.02, lr_decay=6e-05, mask_ratio=0.2, max_kl_weight=1.0, max_supervised_weight=0, min_dist=0.3, min_kl_weight=0.0, model='scETM', n_epochs=800, n_neighbors=15, n_samplers=4, n_topics=100, n_warmup_epochs=300, no_be=False, no_bn=False, no_draw=False, no_eval=False, norm_cell_read_counts=False, norm_cells=True, normed_loss=False, pathway_csv_path='', quantile_norm=False, resolutions=(0.05, 0.1, 0.15, 0.2), restore_epoch=0, save_embeddings=True, seed=-1, spread=1.0, subset_genes=0, tracked_metric='leiden_ari', trainable_gene_emb_dim=300)
+INFO [2021-01-12 14:05:07,856]: adata: AnnData object with n_obs × n_vars = 1886 × 14878
+    obs: 'barcode', 'cell_types', 'cell_id', 'batch_indices'
+INFO [2021-01-12 14:05:07,856]: n_batches: 2
+INFO [2021-01-12 14:05:07,857]: n_labels: 13
+INFO [2021-01-12 14:05:07,858]: label counts:
+beta                  894
+ductal                275
+delta                 218
+alpha                 191
+endothelial           139
+quiescent_stellate     47
+gamma                  41
+macrophage             36
+activated_stellate     14
+B_cell                 10
+immune_other            8
+T_cell                  7
+schwann                 6
+Name: cell_types, dtype: int64
+INFO [2021-01-12 14:05:07,858]: pmem(rss=273108992, vms=6633701376, pfaults=82675, pageins=2639)
+INFO [2021-01-12 14:05:09,994]: ==========Epoch 1==========
+INFO [2021-01-12 14:05:09,994]: pmem(rss=1280770048, vms=7656849408, pfaults=330623, pageins=2640)
+INFO [2021-01-12 14:05:09,994]: lr: 0.01999880003599928
+INFO [2021-01-12 14:05:09,995]: loss: 43524.6211
+INFO [2021-01-12 14:05:09,995]: nll: 43524.6211
+INFO [2021-01-12 14:05:09,995]: kl_delta: 29.2291
+INFO [2021-01-12 14:05:09,996]: max_norm: 961374.8750
+INFO [2021-01-12 14:05:12,697]: Resolution:  0.05	ARI:  0.5027	NMI:  0.6464	# labels: 4
+INFO [2021-01-12 14:05:12,770]: Resolution:   0.1	ARI:  0.5830	NMI:  0.7386	# labels: 8
+INFO [2021-01-12 14:05:12,835]: Resolution:  0.15	ARI:  0.6384	NMI:  0.7683	# labels: 8
+INFO [2021-01-12 14:05:12,913]: Resolution:   0.2	ARI:  0.5553	NMI:  0.7553	# labels: 10
+INFO [2021-01-12 14:05:23,071]: ==========End of evaluation==========
+INFO [2021-01-12 14:11:58,955]: ==========Epoch 400==========
+INFO [2021-01-12 14:11:58,955]: pmem(rss=1728126976, vms=9061429248, pfaults=463421, pageins=2690)
+INFO [2021-01-12 14:11:58,955]: lr: 0.01952571419515824
+INFO [2021-01-12 14:11:58,955]: loss: 10334.4139
+INFO [2021-01-12 14:11:58,955]: nll: 10280.7733
+INFO [2021-01-12 14:11:58,956]: kl_delta: 367.9803
+INFO [2021-01-12 14:11:58,956]: max_norm: 1071.8998
+INFO [2021-01-12 14:11:59,345]: Resolution:  0.05	ARI:  0.6465	NMI:  0.7944	# labels: 9
+INFO [2021-01-12 14:11:59,412]: Resolution:   0.1	ARI:  0.6571	NMI:  0.8099	# labels: 10
+INFO [2021-01-12 14:11:59,488]: Resolution:  0.15	ARI:  0.6621	NMI:  0.8160	# labels: 10
+INFO [2021-01-12 14:11:59,556]: Resolution:   0.2	ARI:  0.6621	NMI:  0.8160	# labels: 10
+INFO [2021-01-12 14:12:09,739]: ==========End of evaluation==========
+INFO [2021-01-12 14:18:42,393]: ==========Epoch 800==========
+INFO [2021-01-12 14:18:42,393]: pmem(rss=1817882624, vms=9114562560, pfaults=485337, pageins=2694)
+INFO [2021-01-12 14:18:42,393]: lr: 0.01906267574155024
+INFO [2021-01-12 14:18:42,393]: loss: 9734.7200
+INFO [2021-01-12 14:18:42,394]: nll: 9682.2593
+INFO [2021-01-12 14:18:42,394]: kl_delta: 52.4606
+INFO [2021-01-12 14:18:42,394]: max_norm: 84.4243
+INFO [2021-01-12 14:18:42,765]: Resolution:  0.05	ARI:  0.6377	NMI:  0.7765	# labels: 6
+INFO [2021-01-12 14:18:42,828]: Resolution:   0.1	ARI:  0.6640	NMI:  0.8158	# labels: 8
+INFO [2021-01-12 14:18:42,899]: Resolution:  0.15	ARI:  0.6615	NMI:  0.8149	# labels: 10
+INFO [2021-01-12 14:18:42,967]: Resolution:   0.2	ARI:  0.6640	NMI:  0.8164	# labels: 10
+INFO [2021-01-12 14:18:42,968]: Calculating batch mixing entropy...
+INFO [2021-01-12 14:18:49,300]: theta_BE:  0.3353
+INFO [2021-01-12 14:18:49,300]: Calculating batch mixing entropy...
+INFO [2021-01-12 14:18:55,503]: delta_BE:  0.3558
+INFO [2021-01-12 14:19:05,527]: ==========End of evaluation==========
+INFO [2021-01-12 14:19:05,528]: Optimization Finished: results/MousePancreas_scETM_batchScaling_normCells_time01_12-14_05_07
+INFO [2021-01-12 14:19:05,635]: Duration: 837.8 s (14.0 min)
