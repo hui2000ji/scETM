@@ -2,6 +2,7 @@ from argparse import ArgumentError
 import os
 import sys
 import time
+from numpy.lib.arraysetops import isin
 import psutil
 import pickle
 import logging
@@ -30,8 +31,8 @@ def train(model: torch.nn.Module, adata: anndata.AnnData, args, epoch=0,
     if args.n_samplers == 1 or args.batch_size >= adata.n_obs:
         sampler = CellSampler(adata, args)
     else:
-        sampler = CellSamplerPool(args.n_samplers, adata, args)
-    sampler.start()
+        sampler = CellSamplerPool(adata, args)
+    dataloader = iter(sampler)
         
     # set up initial learning rate and optimizer
     step = epoch * steps_per_epoch
@@ -56,7 +57,7 @@ def train(model: torch.nn.Module, adata: anndata.AnnData, args, epoch=0,
         }
 
         # construct data_dict
-        data_dict = {k: v.to(device) for k, v in sampler.pipeline.get_message().items()}
+        data_dict = {k: v.to(device) for k, v in next(dataloader).items()}
 
         # train for one step
         model.train()
@@ -105,7 +106,8 @@ def train(model: torch.nn.Module, adata: anndata.AnnData, args, epoch=0,
             next_ckpt_epoch += args.log_every
 
     logging.info("Optimization Finished: %s" % args.ckpt_dir)
-    sampler.join(0.1)
+    if isinstance(sampler, CellSamplerPool):
+        sampler.join(0.1)
 
 
 def evaluate(model: scETM, adata: anndata.AnnData, args, epoch,
@@ -123,12 +125,16 @@ def evaluate(model: scETM, adata: anndata.AnnData, args, epoch,
     # Only calc BE at last step
     if adata.obs.batch_indices.nunique() > 1 and not args.no_be and \
             ((not args.eval and epoch == args.n_epochs) or (args.eval and epoch == args.restore_epoch)):
-        for name, latent_space in embeddings.items():
-            logging.info(f'{name}_BE: {entropy_batch_mixing(latent_space, adata.obs.batch_indices):7.4f}')
+        for emb_name, latent_space in embeddings.items():
+            if emb_name == 'recon_log':
+                continue
+            logging.info(f'{emb_name}_BE: {entropy_batch_mixing(latent_space, adata.obs.batch_indices):7.4f}')
 
     if not args.no_draw:
         color_by = args.color_by if cluster_key is None else ([cluster_key] + args.color_by)
         for emb_name, emb in embeddings.items():
+            if emb_name == 'recon_log':
+                continue
             draw_embeddings(adata=adata, fname=f'{args.dataset_str}_{args.model}_{emb_name}_epoch{epoch}.pdf',
                 args=args, color_by=color_by, use_rep=emb_name)
     if save_emb:

@@ -1,9 +1,7 @@
 import anndata
-import scanpy as sc
 import torch
 import torch.nn as nn
-from scipy.sparse import csr_matrix
-from sklearn.metrics import adjusted_rand_score
+from batch_sampler import CellSampler
 
 
 class BaseCellModel(nn.Module):
@@ -23,13 +21,7 @@ class BaseCellModel(nn.Module):
         if self.mask_ratio < 0 or self.mask_ratio > 0.5:
             raise ValueError("Mask ratio should be between 0 and 0.5.")
 
-        self.is_sparse = isinstance(adata.X, csr_matrix)
-        if self.is_sparse:
-            self.library_size = adata.X.sum(1)
-        else:
-            self.library_size = adata.X.sum(1, keepdims=True)
-        self.X = adata.X
-        self.batch_indices = adata.obs.batch_indices.astype(int)
+        self.adata, self.args = adata, args
 
     def mask_gene_expression(self, cells):
         if self.mask_ratio > 0:
@@ -42,33 +34,14 @@ class BaseCellModel(nn.Module):
         if isinstance(weight_names, str):
             weight_names = [weight_names]
 
-        if self.n_cells > self.batch_size:
-            weights = {name: [] for name in weight_names}
-            for start in range(0, self.n_cells, self.batch_size):
-                X = self.X[start: start + self.batch_size, :]
-                if self.is_sparse:
-                    X = X.todense()
-                cells = torch.FloatTensor(X).to(self.device)
-                library_size = torch.FloatTensor(self.library_size[start: start + self.batch_size]).to(self.device)
-                data_dict = dict(cells=cells, library_size=library_size,
-                    cell_indices=torch.arange(start, min(start + self.batch_size, self.n_cells), device=self.device))
-                if self.input_batch_id or self.batch_scaling:
-                    batch_indices = torch.LongTensor(self.batch_indices[start: start + self.batch_size]).to(self.device)
-                    data_dict['batch_indices'] = batch_indices
-                fwd_dict = self(data_dict, dict(val=True))
-                for name in weight_names:
-                    weights[name].append(fwd_dict[name].detach().cpu())
-            weights = {name: torch.cat(weights[name], dim=0).numpy() for name in weight_names}
-        else:
-            X = self.X.todense() if self.is_sparse else self.X
-            cells = torch.FloatTensor(X).to(self.device)
-            library_size = torch.FloatTensor(self.library_size).to(self.device)
-            data_dict = dict(cells=cells, library_size=library_size, cell_indices=torch.arange(self.n_cells, device=self.device))
-            if self.input_batch_id or self.batch_scaling:
-                batch_indices = torch.LongTensor(self.batch_indices).to(self.device)
-                data_dict['batch_indices'] = batch_indices
+        sampler = CellSampler(self.adata, self.args, n_epochs=1, shuffle=False)
+        weights = {name: [] for name in weight_names}
+        for data_dict in sampler:
+            data_dict = {k: v.to(self.device) for k, v in data_dict.items()}
             fwd_dict = self(data_dict, dict(val=True))
-            weights = {name: fwd_dict[name].detach().cpu().numpy() for name in weight_names}
+            for name in weight_names:
+                weights[name].append(fwd_dict[name].detach().cpu())
+        weights = {name: torch.cat(weights[name], dim=0).numpy() for name in weight_names}
         return weights
 
     @staticmethod

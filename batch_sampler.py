@@ -6,10 +6,9 @@ import torch
 from scipy.sparse import csr_matrix
 
 
-class CellSampler(threading.Thread):
+class CellSampler():
     def __init__(self, adata: anndata.AnnData, args,
-                 n_epochs=np.inf, rng=None):
-        super().__init__(daemon=True)
+                 n_epochs=np.inf, rng=None, shuffle=True):
         self.n_cells = adata.n_obs
         self.batch_size = args.batch_size
         self.n_epochs = n_epochs
@@ -18,6 +17,7 @@ class CellSampler(threading.Thread):
         self.X = adata.X
         self.supervised = args.max_supervised_weight > 0
         self.rng = rng
+        self.shuffle = shuffle
         if self.supervised:
             cell_types = list(adata.obs.cell_types.unique())
             self.cell_type_indices = adata.obs.cell_types.apply(lambda x: cell_types.index(x))
@@ -26,16 +26,14 @@ class CellSampler(threading.Thread):
         else:
             self.library_size = adata.X.sum(1, keepdims=True)
         self.sample_batches = args.input_batch_id or args.batch_scaling
-
-        self.pipeline = Pipeline()
         if self.sample_batches:
             self.batch_indices = adata.obs.batch_indices.astype(int).values
 
-    def run(self):
+    def __iter__(self):
         if self.batch_size <= self.n_cells:
-            self._low_batch_size()
+            return self._low_batch_size()
         else:
-            self._high_batch_size()
+            return self._high_batch_size()
 
     def _high_batch_size(self):
         count = 0
@@ -49,13 +47,14 @@ class CellSampler(threading.Thread):
             result_dict['cell_type_indices'] = torch.LongTensor(self.cell_type_indices)
         while count < self.n_epochs:
             count += 1
-            self.pipeline.set_message(result_dict)
+            yield result_dict
 
     def _low_batch_size(self):
         entry_index = 0
         count = 0
         cell_range = np.arange(self.n_cells)
-        np.random.shuffle(cell_range)
+        if self.shuffle:
+            np.random.shuffle(cell_range)
         while count < self.n_epochs:
             if self.rng is not None:
                 batch = self.rng.choice(cell_range, size=self.batch_size)
@@ -63,7 +62,8 @@ class CellSampler(threading.Thread):
                 if entry_index + self.batch_size >= self.n_cells:
                     count += 1
                     batch = cell_range[entry_index:]
-                    np.random.shuffle(cell_range)
+                    if self.shuffle:
+                        np.random.shuffle(cell_range)
                     excess = entry_index + self.batch_size - self.n_cells
                     if excess > 0 and count < self.n_epochs:
                         batch = np.append(batch, cell_range[:excess], axis=0)
@@ -82,30 +82,61 @@ class CellSampler(threading.Thread):
                 result_dict['batch_indices'] = torch.LongTensor(self.batch_indices[batch])
             if self.supervised:
                 result_dict['cell_type_indices'] = torch.LongTensor(self.cell_type_indices[batch])
+            yield result_dict
+
+
+class ThreadedCellSampler(threading.Thread):
+    def __init__(self, adata: anndata.AnnData, args,
+                 n_epochs=np.inf, rng=None):
+        super().__init__(daemon=True)
+        self.sampler = CellSampler(adata, args, n_epochs, rng)
+        self.pipeline = Pipeline()
+        self.finished = False
+        self.start()
+
+    def run(self):
+        for result_dict in self.sampler:
             self.pipeline.set_message(result_dict)
+        self.pipeline.set_message(None)
+
+    def __iter__(self):
+        return self.iterator()
+
+    def iterator(self):
+        while True:
+            try:
+                result_dict = self.pipeline.get_message()
+            except Exception:
+                break
+            if result_dict is None:
+                break
+            yield result_dict
 
 
 class CellSamplerPool:
-    def __init__(self, n_samplers, adata: anndata.AnnData, args, n_epochs=np.inf):
+    def __init__(self, adata: anndata.AnnData, args, n_epochs=np.inf):
+        self.n_samplers = args.n_samplers
         self.samplers = [
-            CellSampler(adata, args,
-                        n_epochs=n_epochs,
+            ThreadedCellSampler(adata, args,
+                        n_epochs= n_epochs / self.n_samplers,
                         rng=np.random.default_rng(i * 100 + np.random.randint(100))
-                       ) for i in range(n_samplers)]
+                       ) for i in range(self.n_samplers)]
+        self.iterators = [iter(sampler) for sampler in self.samplers]
         self.current = 0
-        self.n_samplers = n_samplers
 
-    def start(self):
-        for sampler in self.samplers:
-            sampler.start()
+    def __iter__(self):
+        return self.iterator()
 
-    @property
-    def pipeline(self):
-        pl = self.samplers[self.current].pipeline
-        self.current += 1
-        if self.current == self.n_samplers:
-            self.current = 0
-        return pl
+    def iterator(self):
+        while True:
+            self.current += 1
+            if self.current == self.n_samplers:
+                self.current = 0
+            try:
+                result_dict = next(self.iterators[self.current])
+            except StopIteration:
+                break
+            yield result_dict
 
     def join(self, seconds):
         for sampler in self.samplers:
@@ -167,8 +198,7 @@ if __name__ == '__main__':
     from tqdm import tqdm
     from arg_parser import args
     adata = anndata.read_h5ad('../data/HumanPancreas/HumanPancreas.h5ad')
-    sampler = CellSamplerPool(4, adata, args)
-    sampler.start()
+    sampler = CellSamplerPool(adata, args)
     start = time()
     current = 0
     for _ in tqdm(range(400)):

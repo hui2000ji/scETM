@@ -22,7 +22,7 @@ def get_train_instance_name(args):
             ('minKLWeight', args.min_kl_weight),
             ('KLWeightAnneal', args.n_warmup_epochs, 300),
             ('inputBatchID', args.input_batch_id),
-            ('maskRatio', args.mask_ratio, 0.2),
+            ('maskRatio', args.mask_ratio, 0.),
             ('supervised', args.max_supervised_weight, 0.),
             ('trnGeneEmbDim', args.trainable_gene_emb_dim, 300)
     ):
@@ -111,7 +111,8 @@ def save_embeddings(model, adata, embeddings, args):
     save_dict = dict(
         delta=embeddings['delta'],
         alpha=model.alpha.detach().cpu().numpy(),
-        gene_names=adata.var_names
+        gene_names=adata.var_names,
+        recon_log=embeddings['recon_log']
     )
     if model.rho is not None:
         save_dict['rho'] = model.rho.detach().cpu().numpy()

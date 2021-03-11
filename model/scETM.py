@@ -87,7 +87,7 @@ class scETM(BaseCellModel):
         return w_batch_id
 
     def get_cell_emb_weights(self):
-        return super().get_cell_emb_weights(['theta', 'delta'])
+        return super().get_cell_emb_weights(['theta', 'delta', 'recon_log'])
 
     def forward(self, data_dict, hyper_param_dict=dict(val=True)):
         cells, library_size = data_dict['cells'], data_dict['library_size']
@@ -98,15 +98,6 @@ class scETM(BaseCellModel):
         
         q_delta = self.q_delta(normed_cells)
         mu_q_delta = self.mu_q_delta(q_delta)
-
-        if 'val' in hyper_param_dict:
-            theta = F.softmax(mu_q_delta, dim=-1)
-            if self.supervised:
-                cell_type_logit = self.cell_type_clf(mu_q_delta)
-                return dict(theta=theta, delta=mu_q_delta, cell_type_logit=cell_type_logit)
-            else:
-                return dict(theta=theta, delta=mu_q_delta)
-
         logsigma_q_delta = self.logsigma_q_delta(q_delta).clamp(self.min_logsigma, self.max_logsigma)
         q_delta = Independent(Normal(
             loc=mu_q_delta,
@@ -121,16 +112,25 @@ class scETM(BaseCellModel):
         beta = self.alpha @ rho
 
         if self.normalize_beta:
-            recon = torch.mm(theta, F.softmax(beta, dim=-1)) + 1e-30
-            nll = (-recon.log() * self.mask_gene_expression(normed_cells if self.normed_loss else cells)).sum(-1).mean()
+            recon = torch.mm(theta, F.softmax(beta, dim=-1))
+            recon_log = (recon + 1e-30).log()
         else:
             recon_logit = torch.mm(theta, beta)  # [batch_size, n_genes]
             if self.global_bias is not None:
                 recon_logit += self.global_bias
             if self.batch_scaling:
                 recon_logit += self.gene_bias[data_dict['batch_indices']]
-            nll = (-F.log_softmax(recon_logit, dim=-1) * self.mask_gene_expression(normed_cells if self.normed_loss else cells)).sum(-1).mean()
+            recon_log = F.log_softmax(recon_logit, dim=-1)
 
+        if 'val' in hyper_param_dict:
+            theta = F.softmax(mu_q_delta, dim=-1)
+            fwd_dict = dict(theta=theta, delta=mu_q_delta, recon_log=recon_log)
+            if self.supervised:
+                cell_type_logit = self.cell_type_clf(mu_q_delta)
+                fwd_dict['cell_type_logit'] = cell_type_logit
+            return fwd_dict
+
+        nll = (-recon_log * self.mask_gene_expression(normed_cells if self.normed_loss else cells)).sum(-1).mean()
         kl_delta = self.get_kl(mu_q_delta, logsigma_q_delta).mean()
         loss = nll + hyper_param_dict['beta'] * kl_delta
         tracked_items = dict(loss=loss, nll=nll, kl_delta=kl_delta)
@@ -144,7 +144,8 @@ class scETM(BaseCellModel):
 
         fwd_dict = dict(
             theta=theta,
-            delta=delta
+            delta=delta,
+            recon_log=recon_log
         )
         
         return loss, fwd_dict, tracked_items
