@@ -1,7 +1,7 @@
 # scETM: single-cell Embedded Topic Model
 A generative topic model that facilitates integrative analysis of large-scale single-cell RNA sequencing data.
 
-The full description of scETM and its application on published single cell RNA-seq datasets are available in ... (to be added once on bioarxiv).
+The full description of scETM and its application on published single cell RNA-seq datasets are available [here](https://www.biorxiv.org/content/10.1101/2021.01.13.426593v1).
 
 This repository includes detailed instructions for installation and requirements, demos, and scripts used for the benchmarking of 7 other state-of-art methods.
 
