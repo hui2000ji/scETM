@@ -59,6 +59,7 @@ class DatasetConfig:
 
 
 cortex_config = DatasetConfig("cortex", lambda args: scvi.dataset.CortexDataset('../data/cortex').to_anndata())
+hemato_config = DatasetConfig("hemato", lambda args: scvi.dataset.CortexDataset('../data/hemato').to_anndata())
 prefrontal_cortex_config = DatasetConfig("prefrontalCortex", lambda args: scvi.dataset.PreFrontalCortexStarmapDataset('../data/PreFrontalCortex').to_anndata())
 
 available_datasets = dict(cortex=cortex_config, prefrontalCortex=prefrontal_cortex_config)

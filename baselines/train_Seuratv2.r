@@ -32,105 +32,56 @@ args <- parser$parse_args()
 dataset_str <- basename(args$h5seurat_path)
 dataset_str <- substring(dataset_str, 1, nchar(dataset_str) - 9)
 dataset <- LoadH5Seurat(args$h5seurat_path)
-batches <- names(table(dataset@meta.data$batch_indices))
-print(batches)
-
 args$ckpt_dir <- file.path(args$ckpt_dir, sprintf("%s_Seurat%d_%s", dataset_str, args$subset_genes, strftime(Sys.time(),"%m_%d-%H_%M_%S")))
 if (!dir.exists((args$ckpt_dir))) {
     dir.create(args$ckpt_dir)
 }
 
-dataset_list <- list()
-for (i in seq_len(length(batches))) {
-    matrix_data <- dataset@assays$RNA@data[, dataset@meta.data$batch_indices == batches[[i]]]
-    dataset_list[[i]] <- CreateSeuratObject(
-        counts = matrix_data,
-        min.cell = 0,
-        min.features = 0,
-        meta.data = dataset@meta.data[dataset@meta.data$batch_indices == batches[[i]],]
-    )
-    writeLines(sprintf("<%d> batch_name: %s; shape: %s", i, batches[[i]], paste(dim(dataset_list[[i]]), collapse = ' ')))
-}
-
-start_time <- proc.time()
-print_memory_usage()
-
-for (i in seq_len(length(batches))) {
-    dataset_list[[i]] <- NormalizeData(
-        object = dataset_list[[i]],
-        verbose = FALSE
-    )
-    # if (args$subset_genes) {
-    #     dataset_list[[i]] <- FindVariableFeatures(
-    #         object = dataset_list[[i]],
-    #         selection.method = "vst",
-    #         nfeatures = args$subset_genes,
-    #         verbose = FALSE
-    #     )
-    # }
-}
-
-if (args$subset_genes) {
-    anchor_features <- args$subset_genes
-} else {
-    anchor_features <- rownames(dataset@assays$RNA@data)
-}
-
-anchors <- FindIntegrationAnchors(
-    object.list = dataset_list,
-    dims = 1:30,
-    anchor.features = anchor_features
-)
-
-integrated <- IntegrateData(
-    anchorset = anchors,
-    dims = 1:30
-)
-
-DefaultAssay(object = integrated) <- "integrated"
-
-integrated <- ScaleData(
-    object = integrated,
+dataset <- NormalizeData(dataset)
+dataset <- FindVariableFeatures(
+    object = dataset,
+    selection.method = "vst",
+    nfeatures = args$subset_genes,
     verbose = FALSE
 )
-print(proc.time() - start_time)
-print_memory_usage()
+dataset <- ScaleData(dataset, features = rownames(dataset))
 
 if (!args$no_eval) {
-    integrated <- RunPCA(integrated, verbose = FALSE)
-    integrated <- FindNeighbors(integrated, k.param = 20, dims = 1:20)
+    dataset <- RunPCA(dataset, verbose = FALSE)
+    dataset <- FindNeighbors(dataset, k.param = 20, dims = 1:20)
     best_ari <- -1
     best_res <- -1
     for (res in args$resolutions) {
-        integrated <- FindClusters(integrated, resolution = res)
-        seurat <- integrated@meta.data$seurat_clusters
-        nmi <- NMI(seurat, integrated@meta.data$cell_types)
-        ari <- ARI(seurat, integrated@meta.data$cell_types)
-        writeLines(sprintf("resolution: %.2f", res))
+        dataset <- FindClusters(dataset, resolution = res)
+        seurat <- dataset@meta.data$seurat_clusters
+        nmi <- NMI(seurat, dataset@meta.data$cell_types)
+        ari <- ARI(seurat, dataset@meta.data$cell_types)
+        writeLines(sprintf("resolution: %.3f", res))
+
         writeLines(sprintf("ARI: %.4f", ari))
         writeLines(sprintf("NMI: %.4f", nmi))
         writeLines(sprintf("# clusters: %d", length(table(seurat))))
         if (ari > best_ari) {
-            integrated@meta.data$best_clusters <- seurat
+            dataset@meta.data$best_clusters <- seurat
             best_ari <- ari
             best_res <- res
         }
     }
     if (!args$no_draw) {
-        integrated <- RunUMAP(integrated, dims = 1:50)
+        dataset <- RunUMAP(dataset, dims = 1:50)
         pdf(
             file.path(args$ckpt_dir, sprintf("%s_Seurat_%.3f.pdf", dataset_str, best_res)),
             width = 24,
             height = 8
         )
-        p1 <- DimPlot(integrated, reduction = "umap", group.by = "cell_types")
-        p2 <- DimPlot(integrated, reduction = "umap", group.by = "best_clusters")
-        p3 <- DimPlot(integrated, reduction = "umap", group.by = "batch_indices")
+        p1 <- DimPlot(dataset, reduction = "umap", group.by = "cell_types")
+        p2 <- DimPlot(dataset, reduction = "umap", group.by = "best_clusters")
+        p3 <- DimPlot(dataset, reduction = "umap", group.by = "batch_indices")
         print(p1 + p2 + p3)
         dev.off()
     }
 }
 
 fpath <- file.path(args$ckpt_dir, sprintf("%s_Seurat.h5seurat", dataset_str))
-SaveH5Seurat(integrated, file = fpath, overwrite = T)
+SaveH5Seurat(dataset, file = fpath, overwrite = T)
 Convert(fpath, dest = "h5ad", overwrite = T)

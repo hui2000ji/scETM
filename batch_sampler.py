@@ -91,7 +91,6 @@ class ThreadedCellSampler(threading.Thread):
         super().__init__(daemon=True)
         self.sampler = CellSampler(adata, args, n_epochs, rng)
         self.pipeline = Pipeline()
-        self.finished = False
         self.start()
 
     def run(self):
@@ -118,8 +117,8 @@ class CellSamplerPool:
         self.n_samplers = args.n_samplers
         self.samplers = [
             ThreadedCellSampler(adata, args,
-                        n_epochs= n_epochs / self.n_samplers,
-                        rng=np.random.default_rng(i * 100 + np.random.randint(100))
+                        n_epochs = n_epochs / self.n_samplers,
+                        rng = np.random.default_rng(i * 100 + np.random.randint(100))
                        ) for i in range(self.n_samplers)]
         self.iterators = [iter(sampler) for sampler in self.samplers]
         self.current = 0
