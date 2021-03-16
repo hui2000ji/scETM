@@ -60,13 +60,7 @@ def train(model: torch.nn.Module, adata: anndata.AnnData, args, epoch=0,
         data_dict = {k: v.to(device) for k, v in next(dataloader).items()}
 
         # train for one step
-        model.train()
-        optimizer.zero_grad()
-        loss, fwd_dict, new_tracked_items = model(data_dict, hyper_param_dict)
-        loss.backward()
-        norms = torch.nn.utils.clip_grad_norm_(model.parameters(), 500)
-        new_tracked_items['max_norm'] = norms.cpu().numpy()
-        optimizer.step()
+        new_tracked_items = model.train_step(optimizer, data_dict, hyper_param_dict)
 
         # log tracked items
         for key, val in new_tracked_items.items():

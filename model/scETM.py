@@ -35,7 +35,7 @@ class scETM(BaseCellModel):
         self.supervised = args.max_supervised_weight > 0
         if self.supervised:
             self.n_labels = adata.obs.cell_types.nunique()
-            self.cell_type_clf = self.get_fully_connected_layers(self.n_topics, self.n_labels, args)
+            self.cell_type_clf = self.get_fully_connected_layers(self.n_topics, self.n_topics // 2, args, self.n_labels)
 
         self.rho_fixed, self.rho = None, None
         if 'gene_emb' in adata.varm:
@@ -106,14 +106,22 @@ class scETM(BaseCellModel):
             recon_log = F.log_softmax(recon_logit, dim=-1)
         return recon_log
 
+    def train_step(self, optimizer, data_dict, hyper_param_dict=dict(val=True)):
+        self.train()
+        optimizer.zero_grad()
+        loss, _, new_tracked_items = self(data_dict, hyper_param_dict)
+        loss.backward()
+        norms = torch.nn.utils.clip_grad_norm_(self.parameters(), 500)
+        new_tracked_items['max_norm'] = norms.cpu().numpy()
+        optimizer.step()
+        return new_tracked_items
+
     def forward(self, data_dict, hyper_param_dict=dict(val=True)):
         cells, library_size = data_dict['cells'], data_dict['library_size']
         normed_cells = cells / library_size if self.norm_cells else cells
-
-        if self.input_batch_id:
-            normed_cells = torch.cat((normed_cells, self._get_batch_indices_oh(data_dict)), dim=1)
+        input_normed_cells = torch.cat((normed_cells, self._get_batch_indices_oh(data_dict)), dim=1) if self.input_batch_id else normed_cells
         
-        q_delta = self.q_delta(normed_cells)
+        q_delta = self.q_delta(input_normed_cells)
         mu_q_delta = self.mu_q_delta(q_delta)
         logsigma_q_delta = self.logsigma_q_delta(q_delta).clamp(self.min_logsigma, self.max_logsigma)
         q_delta = Independent(Normal(

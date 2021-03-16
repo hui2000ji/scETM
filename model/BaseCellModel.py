@@ -45,7 +45,7 @@ class BaseCellModel(nn.Module):
         return weights
 
     @staticmethod
-    def get_fully_connected_layers(n_input, hidden_sizes, args):
+    def get_fully_connected_layers(n_input, hidden_sizes, args, n_output=None):
         if isinstance(hidden_sizes, int):
             hidden_sizes = [hidden_sizes]
         layers = []
@@ -57,6 +57,8 @@ class BaseCellModel(nn.Module):
             if args.dropout_prob:
                 layers.append(nn.Dropout(args.dropout_prob))
             n_input = size
+        if n_output is not None:
+            layers.append(nn.Linear(n_input, n_output))
         return nn.Sequential(*layers)
     
     @staticmethod

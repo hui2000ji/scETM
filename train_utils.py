@@ -21,7 +21,6 @@ def get_train_instance_name(args):
             ('maxKLWeight', args.max_kl_weight, 1.),
             ('minKLWeight', args.min_kl_weight),
             ('KLWeightAnneal', args.n_warmup_epochs, 300),
-            ('inputBatchID', args.input_batch_id),
             ('maskRatio', args.mask_ratio, 0.),
             ('supervised', args.max_supervised_weight, 0.),
             ('trnGeneEmbDim', args.trainable_gene_emb_dim, 300)
@@ -37,6 +36,7 @@ def get_train_instance_name(args):
             ('qn', args.quantile_norm),
             ('log1p', args.log1p),
             ('normRdCnt', args.norm_cell_read_counts),
+            ('inputBatchID', args.input_batch_id),
             (args.log_str, args.log_str),
             ('batchScaling', args.batch_scaling),
             ('globalBias', args.global_bias),
