@@ -61,15 +61,15 @@ class scETM(BaseCellModel):
 
         # self.init_emb()
 
-    @staticmethod
-    def _init_emb(emb):
+    @classmethod
+    def _init_emb(cls, emb):
         if isinstance(emb, nn.Linear):
             nn.init.xavier_uniform_(emb.weight.data)
             if emb.bias is not None:
                 emb.bias.data.fill_(0.0)
         elif isinstance(emb, nn.Sequential):
             for child in emb:
-                scETM._init_emb(child)
+                cls._init_emb(child)
 
     def init_emb(self):
         for m in self.modules():
@@ -89,6 +89,23 @@ class scETM(BaseCellModel):
     def get_cell_emb_weights(self):
         return super().get_cell_emb_weights(['theta', 'delta', 'recon_log'])
 
+    def decode(self, theta, data_dict):
+        rhos = [param for param in (self.rho_fixed, self.rho) if param is not None]
+        rho = torch.cat(rhos, dim=0) if len(rhos) > 1 else rhos[0]
+        beta = self.alpha @ rho
+
+        if self.normalize_beta:
+            recon = torch.mm(theta, F.softmax(beta, dim=-1))
+            recon_log = (recon + 1e-30).log()
+        else:
+            recon_logit = torch.mm(theta, beta)  # [batch_size, n_genes]
+            if self.global_bias is not None:
+                recon_logit += self.global_bias
+            if self.batch_scaling:
+                recon_logit += self.gene_bias[data_dict['batch_indices']]
+            recon_log = F.log_softmax(recon_logit, dim=-1)
+        return recon_log
+
     def forward(self, data_dict, hyper_param_dict=dict(val=True)):
         cells, library_size = data_dict['cells'], data_dict['library_size']
         normed_cells = cells / library_size if self.norm_cells else cells
@@ -107,28 +124,15 @@ class scETM(BaseCellModel):
         delta = q_delta.rsample()
         theta = F.softmax(delta, dim=-1)  # [batch_size, n_topics]
 
-        rhos = [param for param in (self.rho_fixed, self.rho) if param is not None]
-        rho = torch.cat(rhos, dim=0) if len(rhos) > 1 else rhos[0]
-        beta = self.alpha @ rho
-
-        if self.normalize_beta:
-            recon = torch.mm(theta, F.softmax(beta, dim=-1))
-            recon_log = (recon + 1e-30).log()
-        else:
-            recon_logit = torch.mm(theta, beta)  # [batch_size, n_genes]
-            if self.global_bias is not None:
-                recon_logit += self.global_bias
-            if self.batch_scaling:
-                recon_logit += self.gene_bias[data_dict['batch_indices']]
-            recon_log = F.log_softmax(recon_logit, dim=-1)
-
         if 'val' in hyper_param_dict:
             theta = F.softmax(mu_q_delta, dim=-1)
-            fwd_dict = dict(theta=theta, delta=mu_q_delta, recon_log=recon_log)
+            fwd_dict = dict(theta=theta, delta=mu_q_delta, recon_log=self.decode(theta, data_dict))
             if self.supervised:
                 cell_type_logit = self.cell_type_clf(mu_q_delta)
                 fwd_dict['cell_type_logit'] = cell_type_logit
             return fwd_dict
+
+        recon_log = self.decode(theta, data_dict)
 
         nll = (-recon_log * self.mask_gene_expression(normed_cells if self.normed_loss else cells)).sum(-1).mean()
         kl_delta = self.get_kl(mu_q_delta, logsigma_q_delta).mean()
