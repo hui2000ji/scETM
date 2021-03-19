@@ -72,14 +72,14 @@ def clustering(use_rep, adata, args):
         nmi = normalized_mutual_info_score(adata.obs.cell_types, adata.obs[col])
         n_unique = adata.obs[col].nunique()
         aris.append((res, ari, n_unique))
-        if 'batch_indcies' in adata.obs and adata.obs.batch_indices.nunique() > 1:
+        if 'batch_indices' in adata.obs and adata.obs.batch_indices.nunique() > 1:
             ari_batch = adjusted_rand_score(adata.obs.batch_indices, adata.obs[col])
             logging.info(f'Resolution: {res:5.3g}\tARI: {ari:7.4f}\tNMI: {nmi:7.4f}\tbARI: {ari_batch:7.4f}\t# labels: {n_unique}')
         else:
             logging.info(f'Resolution: {res:5.3g}\tARI: {ari:7.4f}\tNMI: {nmi:7.4f}\t# labels: {n_unique}')
     
     aris.sort(key=lambda x: x[1], reverse=True)
-    best_res = aris[0][0]
+    best_res, best_ari = aris[0][0], aris[0][1]
 
     if not args.fix_resolutions and len(aris) > 2:
         # try to automatically adjust resolution values
@@ -89,7 +89,7 @@ def clustering(use_rep, adata, args):
             args.resolutions = [res + min(0.05, min(args.resolutions)) for res in args.resolutions]
         elif aris[-1][2] > n_labels and args.resolutions[0] > 0.01:
             args.resolutions = [res - min(0.1, min(args.resolutions) / 2) for res in args.resolutions]
-    return f'{args.clustering_method}_{best_res}'
+    return f'{args.clustering_method}_{best_res}', best_ari
 
 
 def draw_embeddings(adata: anndata.AnnData, args, color_by: list, fname: str, use_rep: str,

@@ -79,7 +79,7 @@ if args.no_eval:
 
 # Evaluation
 adata.obsm["Scanorama"] = np.concatenate(integrated)
-cluster_key = clustering('Scanorama', adata, args)
+cluster_key, _ = clustering('Scanorama', adata, args)
 if adata.obs.batch_indices.nunique() > 1 and not args.no_be:
     logging.info(f'BE: {entropy_batch_mixing(adata.obsm["Scanorama"], adata.obs.batch_indices):7.4f}')
 if not args.no_draw:

@@ -117,7 +117,7 @@ if args.no_eval:
 from train_utils import clustering, entropy_batch_mixing, draw_embeddings
 
 adata.obsm["X_scVI"] = latent
-cluster_key = clustering('X_scVI', adata, args)
+cluster_key, _ = clustering('X_scVI', adata, args)
 if adata.obs.batch_indices.nunique() > 1 and not args.no_be:
     logging.info(f'BE: {entropy_batch_mixing(latent, adata.obs.batch_indices):7.4f}')
 if not args.no_draw:

@@ -42,6 +42,7 @@ parser.add_argument('--no-eval', action='store_true', help='only do training, do
 parser.add_argument('--restore-epoch', type=int, default=0, help='epoch number of the checkpoint you wish to restore')
 parser.add_argument('--ckpt-dir', type=str, default=os.path.join('..', 'results'), help='directory of checkpoints')
 parser.add_argument('--log-str', type=str, default='', help='additional string on ckpt dir name')
+parser.add_argument('--result-tsv', type=str, default='../benchmark/result.tsv', help='path to the csv file logging the results')
 parser.add_argument('--save-embeddings', action='store_true', help='store cell, gene, topic embeddings after evaluation')
 parser.add_argument('--no-model-ckpt', action='store_true', help='do not checkpoint the model or the optimizer')
 

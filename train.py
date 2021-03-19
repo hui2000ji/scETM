@@ -119,9 +119,9 @@ def evaluate(model: scETM, adata: anndata.AnnData, args, epoch,
     for emb_name, emb in embeddings.items():
         adata.obsm[emb_name] = emb
     if 'cell_types' in adata.obs:
-        cluster_key = clustering(args.clustering_input, adata, args)
+        cluster_key, best_ari = clustering(args.clustering_input, adata, args)
     else:
-        cluster_key = None
+        cluster_key, best_ari = None, None
 
     # Only calc BE at last step
     if adata.obs.batch_indices.nunique() > 1 and not args.no_be and \
@@ -140,6 +140,11 @@ def evaluate(model: scETM, adata: anndata.AnnData, args, epoch,
                 args=args, color_by=color_by, use_rep=emb_name)
     if save_emb:
         save_embeddings(model, adata, embeddings, args)
+    
+    if args.result_tsv:
+        with open(args.result_tsv, 'a+') as f:
+            # ckpt_dir, dataset_str, n_epochs, hidden_sizes, gene_dim, n_topics, ari, nll, seed
+            f.write(f'{os.path.basename(args.ckpt_dir)}\t{args.dataset_str}\t{epoch}\t{args.hidden_sizes}\t{args.trainable_gene_emb_dim}\t{args.n_topics}\t{best_ari}\t{nll}\t{args.seed}\n')
 
 
 if __name__ == '__main__':

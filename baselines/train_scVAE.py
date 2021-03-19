@@ -365,7 +365,7 @@ if __name__ == '__main__':
         logging.info(f'ARI_batch: {adjusted_rand_score(adata.obs.batch_indices, labels)}')
         logging.info(f'NMI_batch: {normalized_mutual_info_score(adata.obs.batch_indices, labels)}')
     adata.obsm['latent'] = latent
-    cluster_key = clustering('latent', adata, args)
+    cluster_key, _ = clustering('latent', adata, args)
     if adata.obs.batch_indices.nunique() > 1 and not args.no_be:
         logging.info(f'BE: {entropy_batch_mixing(latent, adata.obs.batch_indices):7.4f}')
     if not args.no_draw:
