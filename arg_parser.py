@@ -22,7 +22,7 @@ parser.add_argument('--global-bias', action='store_true', help='enable global ge
 parser.add_argument('--max-supervised-weight', type=float, default=0., help='weight of supervsied loss, 0 to turn off supervised components')
 parser.add_argument('--max-kl-weight', type=float, default=1., help='max weight for kl divergence')
 parser.add_argument('--min-kl-weight', type=float, default=0., help='min weight for kl divergence')
-parser.add_argument('--n-warmup-epochs', type=int, default=300, help='linear annealing of kl divergence loss')
+parser.add_argument('--warmup-ratio', type=float, default=1/3, help='gradually increase weight of the kl divergence loss during the first args.warmup_ratio training epochs; after args.warmup_ratio / 2, batch discriminator will start training')
 parser.add_argument('--normed-loss', action='store_true', help='whether to normalize gene expression when calculating loss')
 
 # Training parameters
@@ -31,6 +31,7 @@ parser.add_argument('--n-epochs', type=int, default=800, help='Number of epochs 
 parser.add_argument('--log-every', type=int, default=400, help='Number of epochs between loggings')
 parser.add_argument('--lr', type=float, default=0.02, help='Initial learning rate')
 parser.add_argument('--lr-decay', type=float, default=6e-5, help='Negative log of the learning rate decay rate')
+parser.add_argument('--test-ratio', type=float, default=0.1, help='Amount of held out data used for evaluation')
 parser.add_argument('--batch-size', type=int, default=2000, help='Batch size for training')
 parser.add_argument('--input-batch-id', action='store_true', help='concatenate batch indices to the input to the model')
 parser.add_argument('--n-samplers', type=int, default=4, help='number of sampler thread')
@@ -78,6 +79,7 @@ def add_plotting_arguments(parser):
     parser.add_argument('--min_dist', type=float, default=0.3, help='minimum distance b/t UMAP embedded points')
     parser.add_argument('--spread', type=float, default=1., help='scale of the embedded points')
     # clustering
+    parser.add_argument('--clustering-input', type=str, default='delta', choices=('theta', 'delta'), help="input of batch classifier")
     parser.add_argument('--clustering-method', type=str, choices=('louvain', 'leiden'), default='leiden', help='clustering algorithm')
     parser.add_argument('--resolutions', type=float, nargs='+', default=(0.05, 0.1, 0.15, 0.2), help='resolution of leiden/louvain clustering')
     parser.add_argument('--fix-resolutions', action='store_true', help='do not automatically tune the resolutions')

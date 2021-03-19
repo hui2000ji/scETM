@@ -2,6 +2,7 @@ import scanpy as sc
 import scvi.dataset
 import anndata
 import pandas as pd
+import numpy as np
 import logging
 
 
@@ -37,9 +38,9 @@ def process_dataset(adata: anndata.AnnData, args):
             logging.info(f'{mat.shape[1]} dimensions of the gene embeddings will be trainable. Keeping all genes in the dataset') 
             mat = mat.reindex(index = adata.var_names, fill_value=0.0)
             adata.varm['gene_emb'] = mat.values
-    if hasattr(args, 'color_by') and (hasattr(args, 'no_draw') and not args.no_draw) and (hasattr(args, 'no_eval') and not args.no_eval):
-        for col_name in args.color_by:
-            assert col_name in adata.obs, f"{col_name} in args.color_by but not in adata.obs"
+    # if hasattr(args, 'color_by') and (hasattr(args, 'no_draw') and not args.no_draw) and (hasattr(args, 'no_eval') and not args.no_eval):
+    #     for col_name in args.color_by:
+    #         assert col_name in adata.obs, f"{col_name} in args.color_by but not in adata.obs"
     if hasattr(args, 'max-supervised-weight') and args.max_supervised_weight:
         assert 'cell_types' in adata.obs, f"For supervised learning, the 'cell_types' column must be present in the adata.obs object."
 
@@ -50,6 +51,16 @@ def process_dataset(adata: anndata.AnnData, args):
         logging.info(f'n_labels: {adata.obs.cell_types.nunique()}')
         logging.info(f'label counts:\n{adata.obs.cell_types.value_counts()}')
     return adata
+
+
+def train_test_split(adata : anndata.AnnData, test_ratio=0.1, seed=1):
+    rng = np.random.default_rng(seed=seed)
+    test_indices = rng.choice(adata.n_obs, size=int(test_ratio * adata.n_obs), replace=False)
+    train_indices = list(set(range(adata.n_obs)).difference(test_indices))
+    train_adata = adata[adata.obs_names[train_indices], :]
+    test_adata = adata[adata.obs_names[test_indices], :]
+    logging.info(f'Keeping {test_adata.n_obs} cells ({test_ratio:g}) as test data.')
+    return train_adata, test_adata
 
 
 class DatasetConfig:

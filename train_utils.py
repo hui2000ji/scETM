@@ -20,7 +20,7 @@ def get_train_instance_name(args):
             ('lr', args.lr, 2e-2),
             ('maxKLWeight', args.max_kl_weight, 1.),
             ('minKLWeight', args.min_kl_weight),
-            ('KLWeightAnneal', args.n_warmup_epochs, 300),
+            ('KLWeightAnneal', args.warmup_ratio, 1/3),
             ('maskRatio', args.mask_ratio, 0.),
             ('supervised', args.max_supervised_weight, 0.),
             ('trnGeneEmbDim', args.trainable_gene_emb_dim, 300)
@@ -52,8 +52,8 @@ def get_train_instance_name(args):
 
 
 def get_kl_weight(args, epoch):
-    if args.n_warmup_epochs:
-        kl_weight = max(min(1., epoch / args.n_warmup_epochs)
+    if args.warmup_ratio:
+        kl_weight = max(min(1., epoch / (args.n_epochs * args.warmup_ratio))
                    * args.max_kl_weight, args.min_kl_weight)
     else:
         kl_weight = args.max_kl_weight
@@ -160,3 +160,14 @@ def entropy_batch_mixing(latent_space, batches, n_neighbors=50, n_pools=50, n_sa
             ]
         )
     return score / n_pools
+
+
+def initialize_logger(ckpt_dir=None):
+    stream_handler = logging.StreamHandler()
+    if ckpt_dir is not None:
+        file_handler = logging.FileHandler(os.path.join(ckpt_dir, 'log.txt'))
+    logging.basicConfig(
+        handlers=[stream_handler] if ckpt_dir is None else [stream_handler, file_handler],
+        format='%(levelname)s [%(asctime)s]: %(message)s',
+        level=logging.INFO
+    )

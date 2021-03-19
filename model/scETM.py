@@ -6,6 +6,7 @@ import torch.nn.functional as F
 from torch.distributions import Normal, Independent
 from scipy.sparse import csr_matrix
 from .BaseCellModel import BaseCellModel
+from batch_sampler import CellSampler
 
 class scETM(BaseCellModel):
     def __init__(self, adata: anndata.AnnData, args,
@@ -17,16 +18,12 @@ class scETM(BaseCellModel):
         self.n_topics = args.n_topics
         self.normed_loss = args.normed_loss
         self.norm_cells = args.norm_cells
-        self.is_sparse = isinstance(adata.X, csr_matrix)
-        if self.is_sparse:
-            self.library_size = adata.X.sum(1)
-        else:
-            self.library_size = adata.X.sum(1, keepdims=True) 
  
         self.q_delta = self.get_fully_connected_layers(
             n_input=self.n_genes + ((self.n_batches - 1) if self.input_batch_id else 0),
             hidden_sizes=args.hidden_sizes,
-            args=args
+            bn=not args.no_bn,
+            drop_prob=args.dropout_prob
         )
         hidden_dim = args.hidden_sizes[-1]
         self.mu_q_delta = nn.Linear(hidden_dim, self.n_topics, bias=True)
@@ -35,7 +32,7 @@ class scETM(BaseCellModel):
         self.supervised = args.max_supervised_weight > 0
         if self.supervised:
             self.n_labels = adata.obs.cell_types.nunique()
-            self.cell_type_clf = self.get_fully_connected_layers(self.n_topics, self.n_topics // 2, args, self.n_labels)
+            self.cell_type_clf = self.get_fully_connected_layers(self.n_topics, self.n_topics // 2, self.n_labels, bn=not args.no_bn, drop_prob=args.dropout_prob)
 
         self.rho_fixed, self.rho = None, None
         if 'gene_emb' in adata.varm:
@@ -86,8 +83,23 @@ class scETM(BaseCellModel):
             data_dict['batch_indices_oh'] = w_batch_id
         return w_batch_id
 
-    def get_cell_emb_weights(self):
-        return super().get_cell_emb_weights(['theta', 'delta', 'recon_log'])
+    def get_embedding_and_nll(self, adata : anndata.AnnData, weight_names = ['theta', 'delta', 'recon_log']):
+        self.eval()
+        if isinstance(weight_names, str):
+            weight_names = [weight_names]
+
+        sampler = CellSampler(adata, self.args, n_epochs=1, shuffle=False)
+        weights = {name: [] for name in weight_names}
+        nll = 0.
+        for data_dict in sampler:
+            data_dict = {k: v.to(self.device) for k, v in data_dict.items()}
+            fwd_dict = self(data_dict, dict(val=True))
+            for name in weight_names:
+                weights[name].append(fwd_dict[name].detach().cpu())
+            nll += fwd_dict['nll'].detach().item()
+        weights = {name: torch.cat(weights[name], dim=0).numpy() for name in weight_names}
+        nll /= adata.n_obs
+        return weights, nll
 
     def decode(self, theta, data_dict):
         rhos = [param for param in (self.rho_fixed, self.rho) if param is not None]
@@ -134,7 +146,13 @@ class scETM(BaseCellModel):
 
         if 'val' in hyper_param_dict:
             theta = F.softmax(mu_q_delta, dim=-1)
-            fwd_dict = dict(theta=theta, delta=mu_q_delta, recon_log=self.decode(theta, data_dict))
+            recon_log = self.decode(theta, data_dict)
+            fwd_dict = dict(
+                theta=theta,
+                delta=mu_q_delta,
+                recon_log=recon_log,
+                nll = (-recon_log * (normed_cells if self.normed_loss else cells)).sum()
+            )
             if self.supervised:
                 cell_type_logit = self.cell_type_clf(mu_q_delta)
                 fwd_dict['cell_type_logit'] = cell_type_logit

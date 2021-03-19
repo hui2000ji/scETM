@@ -1,8 +1,7 @@
-from argparse import ArgumentError
 import os
 import sys
 import time
-from numpy.lib.arraysetops import isin
+from typing import Union
 import psutil
 import pickle
 import logging
@@ -11,7 +10,6 @@ from collections import defaultdict
 
 import matplotlib
 import numpy as np
-import pandas as pd
 import anndata
 import scanpy as sc
 import torch
@@ -19,14 +17,17 @@ from torch import optim
 
 from batch_sampler import CellSampler, CellSamplerPool
 from train_utils import get_kl_weight, save_embeddings, clustering, \
-    get_train_instance_name, draw_embeddings, entropy_batch_mixing
-from datasets import available_datasets, process_dataset
+    get_train_instance_name, draw_embeddings, entropy_batch_mixing, initialize_logger
+from datasets import available_datasets, process_dataset, train_test_split
 from arg_parser import parser
 from model import scETM
 
 
-def train(model: torch.nn.Module, adata: anndata.AnnData, args, epoch=0,
+def train(model: torch.nn.Module, adata: anndata.AnnData, args, epoch=0, test_adata : Union[None, anndata.AnnData]=None,
           device=torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')):
+    if test_adata is None:
+        test_adata = adata
+
     # sampler
     if args.n_samplers == 1 or args.batch_size >= adata.n_obs:
         sampler = CellSampler(adata, args)
@@ -35,6 +36,7 @@ def train(model: torch.nn.Module, adata: anndata.AnnData, args, epoch=0,
     dataloader = iter(sampler)
         
     # set up initial learning rate and optimizer
+    steps_per_epoch = max(adata.n_obs / args.batch_size, 1)
     step = epoch * steps_per_epoch
     args.lr = args.lr * (np.exp(-args.lr_decay) ** step)
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
@@ -48,8 +50,6 @@ def train(model: torch.nn.Module, adata: anndata.AnnData, args, epoch=0,
     next_ckpt_epoch = int(np.ceil(epoch / args.log_every) * args.log_every)
 
     while epoch < args.n_epochs:
-        print(f'Training: Epoch {int(epoch):5d}/{args.n_epochs:5d}\tNext ckpt: {next_ckpt_epoch:7d}', end='\r')
-
         # construct hyper_param_dict
         hyper_param_dict = {
             'beta': get_kl_weight(args, epoch),
@@ -73,6 +73,10 @@ def train(model: torch.nn.Module, adata: anndata.AnnData, args, epoch=0,
                 param_group['lr'] = args.lr
         epoch = step / steps_per_epoch
 
+        for key, val in tracked_items.items():
+            print(f'{key}: {np.mean(val):7.4f}', end='\t')
+        print(f'Epoch {int(epoch):5d}/{args.n_epochs:5d}\tNext ckpt: {next_ckpt_epoch:7d}', end='\r')
+
         # eval
         if epoch >= next_ckpt_epoch or epoch >= args.n_epochs:
             logging.info('=' * 10 + f'Epoch {epoch:.0f}' + '=' * 10)
@@ -88,7 +92,7 @@ def train(model: torch.nn.Module, adata: anndata.AnnData, args, epoch=0,
             tracked_items = defaultdict(list)
             
             if not args.no_eval:
-                evaluate(model, adata, args, next_ckpt_epoch, args.save_embeddings and epoch >= args.n_epochs)
+                evaluate(model, test_adata, args, next_ckpt_epoch, args.save_embeddings and epoch >= args.n_epochs)
 
                 # checkpointing
                 torch.save(model.state_dict(), os.path.join(
@@ -107,12 +111,14 @@ def train(model: torch.nn.Module, adata: anndata.AnnData, args, epoch=0,
 def evaluate(model: scETM, adata: anndata.AnnData, args, epoch,
              save_emb=False):
     model.eval()
+    
+    embeddings, nll = model.get_embedding_and_nll(adata)
+    logging.info(f'test nll: {nll:7.4f}')
 
-    embeddings = model.get_cell_emb_weights()
     for emb_name, emb in embeddings.items():
         adata.obsm[emb_name] = emb
     if 'cell_types' in adata.obs:
-        cluster_key = clustering('delta', adata, args)
+        cluster_key = clustering(args.clustering_input, adata, args)
     else:
         cluster_key = None
 
@@ -160,25 +166,24 @@ if __name__ == '__main__':
     else:
         raise ValueError("Must specify dataset through one of h5ad_path, anndata_path, dataset_str.")
 
-    # set up logger
+    # set up checkpoint directory
     if not args.restore_epoch:
         train_instance_name = get_train_instance_name(args)
         args.ckpt_dir = os.path.join(args.ckpt_dir, train_instance_name)
         if not os.path.exists(args.ckpt_dir):
             os.makedirs(args.ckpt_dir)
-    stream_handler = logging.StreamHandler()
-    file_handler = logging.FileHandler(os.path.join(args.ckpt_dir, 'log.txt'))
-    logging.basicConfig(
-        handlers=[stream_handler, file_handler],
-        format='%(levelname)s [%(asctime)s]: %(message)s',
-        level=logging.INFO
-    )
+
+    # set up logger
+    initialize_logger(args.ckpt_dir)
     logging.info(f'argv: {" ".join(sys.argv)}')
     logging.info(f'ckpt_dir: {args.ckpt_dir}')
     logging.info(f'args: {repr(args)}')
 
     # process dataset
     adata = process_dataset(adata, args)
+    test_adata = None
+    if args.test_ratio > 0:
+        adata, test_adata = train_test_split(adata, args.test_ratio)
     logging.info(repr(psutil.Process().memory_info()))
 
     start_time = time.time()
@@ -190,17 +195,15 @@ if __name__ == '__main__':
         model.load_state_dict(torch.load(os.path.join(
             args.ckpt_dir, f'model-{args.restore_epoch}')))
         logging.debug('Parameters restored.')
+    print(model)
 
     # set up step and epoch
-    steps_per_epoch = max(adata.n_obs / args.batch_size, 1)
     epoch = args.restore_epoch if args.restore_epoch else 0
-    if args.n_epochs <= args.n_warmup_epochs * 2:
-        args.n_warmup_epochs = epoch / 2
 
     # train or evaluate
     if args.eval:
         evaluate(model, adata, args, epoch, args.save_embeddings)
     else:
-        train(model, adata, args, epoch)
+        train(model, adata, args, epoch, test_adata)
     duration = time.time() - start_time
     logging.info(f'Duration: {duration:.1f} s ({duration / 60:.1f} min)')
