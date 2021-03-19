@@ -20,8 +20,8 @@ parser.add_argument('--global-bias', action='store_true', help='enable global ge
 
 # Loss parameters
 parser.add_argument('--max-supervised-weight', type=float, default=0., help='weight of supervsied loss, 0 to turn off supervised components')
-parser.add_argument('--max-kl-weight', type=float, default=1., help='max weight for kl divergence')
-parser.add_argument('--min-kl-weight', type=float, default=0., help='min weight for kl divergence')
+parser.add_argument('--max-kl-weight', type=float, default=1e-6, help='max weight for kl divergence')
+parser.add_argument('--min-kl-weight', type=float, default=1e-8, help='min weight for kl divergence')
 parser.add_argument('--warmup-ratio', type=float, default=1/3, help='gradually increase weight of the kl divergence loss during the first args.warmup_ratio training epochs; after args.warmup_ratio / 2, batch discriminator will start training')
 parser.add_argument('--normed-loss', action='store_true', help='whether to normalize gene expression when calculating loss')
 
@@ -42,8 +42,8 @@ parser.add_argument('--no-eval', action='store_true', help='only do training, do
 parser.add_argument('--restore-epoch', type=int, default=0, help='epoch number of the checkpoint you wish to restore')
 parser.add_argument('--ckpt-dir', type=str, default=os.path.join('..', 'results'), help='directory of checkpoints')
 parser.add_argument('--log-str', type=str, default='', help='additional string on ckpt dir name')
-parser.add_argument('--tracked-metric', type=str, default='leiden_ari', help='metric to track for auto ckpt deletion')
 parser.add_argument('--save-embeddings', action='store_true', help='store cell, gene, topic embeddings after evaluation')
+parser.add_argument('--no-model-ckpt', action='store_true', help='do not checkpoint the model or the optimizer')
 
 # Dataset location parameters
 parser.add_argument('--dataset-str', type=str, default='cortex', help='dataset name. Must be the key of available_datasets')

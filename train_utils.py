@@ -18,8 +18,8 @@ def get_train_instance_name(args):
     for tuple_ in (
             ('nTopics', args.n_topics, 100),
             ('lr', args.lr, 2e-2),
-            ('maxKLWeight', args.max_kl_weight, 1.),
-            ('minKLWeight', args.min_kl_weight),
+            ('maxKLWeight', args.max_kl_weight, 1e-6),
+            ('minKLWeight', args.min_kl_weight, 1e-8),
             ('KLWeightAnneal', args.warmup_ratio, 1/3),
             ('maskRatio', args.mask_ratio, 0.),
             ('supervised', args.max_supervised_weight, 0.),

@@ -94,11 +94,12 @@ def train(model: torch.nn.Module, adata: anndata.AnnData, args, epoch=0, test_ad
             if not args.no_eval:
                 evaluate(model, test_adata, args, next_ckpt_epoch, args.save_embeddings and epoch >= args.n_epochs)
 
-                # checkpointing
-                torch.save(model.state_dict(), os.path.join(
-                    args.ckpt_dir, f'model-{next_ckpt_epoch}'))
-                torch.save(optimizer.state_dict(),
-                        os.path.join(args.ckpt_dir, f'opt-{next_ckpt_epoch}'))
+                if next_ckpt_epoch and not args.no_model_ckpt:
+                    # checkpointing
+                    torch.save(model.state_dict(), os.path.join(
+                        args.ckpt_dir, f'model-{next_ckpt_epoch}'))
+                    torch.save(optimizer.state_dict(),
+                            os.path.join(args.ckpt_dir, f'opt-{next_ckpt_epoch}'))
 
             logging.info('=' * 10 + f'End of evaluation' + '=' * 10)
             next_ckpt_epoch += args.log_every
