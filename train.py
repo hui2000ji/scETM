@@ -144,7 +144,7 @@ def evaluate(model: scETM, adata: anndata.AnnData, args, epoch,
     if args.result_tsv:
         with open(args.result_tsv, 'a+') as f:
             # ckpt_dir, dataset_str, n_epochs, hidden_sizes, gene_dim, n_topics, dropout_prob, ari, nll, seed
-            f.write(f'{os.path.basename(args.ckpt_dir)}\t{args.dataset_str}\t{epoch}\t{args.hidden_sizes}\t{args.trainable_gene_emb_dim}\t{args.n_topics}\t{args.dropout_prob}\t{best_ari}\t{nll}\t{args.seed}\n')
+            f.write(f'{os.path.basename(args.ckpt_dir)}\t{args.dataset_str}\t{epoch}\t{args.hidden_sizes}\t{args.trainable_gene_emb_dim}\t{args.n_topics}\t{args.dropout_prob}\t{args.normed_loss}\t{best_ari}\t{nll}\t{args.seed}\n')
 
 
 if __name__ == '__main__':
