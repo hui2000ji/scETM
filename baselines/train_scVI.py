@@ -74,7 +74,8 @@ if args.model.startswith('VAE'):
         n_batch=adata.obs.batch_indices.nunique() if args.batch_removal else 0,
         n_latent=args.n_latent,
         n_hidden=args.n_hidden,
-        n_layers=args.n_layers
+        n_layers=args.n_layers,
+        dispersion="gene-batch" if args.batch_removal else "gene"
     )
 else:
     model = LDVAE(
@@ -82,7 +83,8 @@ else:
         n_batch=adata.obs.batch_indices.nunique() if args.batch_removal else 0,
         n_latent=args.n_latent,
         n_hidden=args.n_hidden,
-        n_layers_encoder=args.n_layers
+        n_layers_encoder=args.n_layers,
+        dispersion="gene-batch" if args.batch_removal else "gene"
     )
 
 if args.restore:
