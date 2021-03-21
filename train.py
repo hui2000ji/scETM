@@ -131,7 +131,7 @@ def evaluate(model: scETM, adata: anndata.AnnData, args, epoch,
     if not args.no_draw:
         color_by = args.color_by if cluster_key is None else ([cluster_key] + args.color_by)
         draw_embeddings(adata=adata, fname=f'{args.dataset_str}_{args.model}_{args.clustering_input}_epoch{epoch}.pdf',
-                args=args, color_by=color_by, use_rep=args.clustering_input)
+                args=args, color_by=color_by, use_rep=args.clustering_input, calc_neighborhood_graph=False)
     if save_emb:
         save_embeddings(model, adata, embeddings, args)
     

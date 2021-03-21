@@ -93,8 +93,9 @@ def clustering(use_rep, adata, args):
 
 
 def draw_embeddings(adata: anndata.AnnData, args, color_by: list, fname: str, use_rep: str,
-                    save: bool = True, show: bool = False):
-    sc.pp.neighbors(adata, use_rep=use_rep, n_neighbors=args.n_neighbors)
+                    save: bool = True, show: bool = False, calc_neighborhood_graph : bool = True):
+    if calc_neighborhood_graph:
+        sc.pp.neighbors(adata, use_rep=use_rep, n_neighbors=args.n_neighbors)
     sc.tl.umap(adata, min_dist=args.min_dist, spread=args.spread)
     fig = sc.pl.umap(adata, color=color_by,
                         show=show, return_fig=True)
