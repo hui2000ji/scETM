@@ -23,7 +23,9 @@ def get_train_instance_name(args):
             ('KLWeightAnneal', args.warmup_ratio, 1/3),
             ('maskRatio', args.mask_ratio, 0.),
             ('supervised', args.max_supervised_weight, 0.),
-            ('trnGeneEmbDim', args.trainable_gene_emb_dim, 300)
+            ('trnGeneEmbDim', args.trainable_gene_emb_dim, 300),
+            ('seed', args.seed, -1),
+            ('encDepth', len(args.hidden_sizes), 2)
     ):
         if len(tuple_) == 2:
             name, numeric_ = tuple_
