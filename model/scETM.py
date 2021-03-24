@@ -130,10 +130,12 @@ class scETM(BaseCellModel):
 
     def forward(self, data_dict, hyper_param_dict=dict(val=True)):
         cells, library_size = data_dict['cells'], data_dict['library_size']
-        normed_cells = cells / library_size if self.norm_cells else cells
-        input_normed_cells = torch.cat((normed_cells, self._get_batch_indices_oh(data_dict)), dim=1) if self.input_batch_id else normed_cells
+        normed_cells = cells / library_size
+        input_cells = normed_cells if self.norm_cells else cells
+        if self.input_batch_id:
+            input_cells = torch.cat((input_cells, self._get_batch_indices_oh(data_dict)), dim=1)
         
-        q_delta = self.q_delta(input_normed_cells)
+        q_delta = self.q_delta(input_cells)
         mu_q_delta = self.mu_q_delta(q_delta)
         logsigma_q_delta = self.logsigma_q_delta(q_delta).clamp(self.min_logsigma, self.max_logsigma)
         q_delta = Independent(Normal(
