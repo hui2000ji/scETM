@@ -211,7 +211,7 @@ if __name__ == '__main__':
 
     # train or evaluate
     if args.eval:
-        evaluate(model, adata, args, epoch, args.save_embeddings)
+        evaluate(model, train_adata, args, epoch, args.save_embeddings, test_adata)
     else:
         train(model, train_adata, args, epoch, test_adata)
     duration = time.time() - start_time
