@@ -1,3 +1,4 @@
+from eval_utils import calculate_kbet_from_adata
 import os
 import sys
 import time
@@ -74,7 +75,7 @@ def train(model: torch.nn.Module, adata: anndata.AnnData, args, epoch=0, test_ad
         epoch = step / steps_per_epoch
 
         for key, val in tracked_items.items():
-            print(f'{key}: {np.mean(val):7.4f}', end='\t')
+            print(f'{key}: {np.mean(val):12.4f}', end='\t')
         print(f'Epoch {int(epoch):5d}/{args.n_epochs:5d}\tNext ckpt: {next_ckpt_epoch:7d}', end='\r')
 
         # eval
@@ -92,7 +93,7 @@ def train(model: torch.nn.Module, adata: anndata.AnnData, args, epoch=0, test_ad
             tracked_items = defaultdict(list)
             
             if not args.no_eval:
-                evaluate(model, test_adata, args, next_ckpt_epoch, args.save_embeddings and epoch >= args.n_epochs)
+                evaluate(model, adata, args, next_ckpt_epoch, args.save_embeddings and epoch >= args.n_epochs, test_adata)
 
                 if next_ckpt_epoch and not args.no_model_ckpt:
                     # checkpointing
@@ -110,11 +111,16 @@ def train(model: torch.nn.Module, adata: anndata.AnnData, args, epoch=0, test_ad
 
 
 def evaluate(model: scETM, adata: anndata.AnnData, args, epoch,
-             save_emb=False):
+             save_emb = False, test_adata: Union[anndata.AnnData, None] = None):
+    if test_adata is None:
+        test_adata = adata
+    
     model.eval()
     
-    embeddings, nll = model.get_embedding_and_nll(adata)
-    logging.info(f'test nll: {nll:7.4f}')
+    _, test_nll = model.get_embedding_and_nll(test_adata)
+    logging.info(f'test nll: {test_nll:7.4f}')
+    if test_adata is not adata:
+        embeddings, _ = model.get_embedding_and_nll(adata)
 
     for emb_name, emb in embeddings.items():
         adata.obsm[emb_name] = emb
@@ -124,9 +130,12 @@ def evaluate(model: scETM, adata: anndata.AnnData, args, epoch,
         cluster_key, best_ari = None, None
 
     # Only calc BE at last step
-    if adata.obs.batch_indices.nunique() > 1 and not args.no_be and \
+    if adata.obs.batch_indices.nunique() > 1:
+        if not args.no_be and \
             ((not args.eval and epoch == args.n_epochs) or (args.eval and epoch == args.restore_epoch)):
-        logging.info(f'{args.clustering_input}_BE: {entropy_batch_mixing(adata.obsm[args.clustering_input], adata.obs.batch_indices):7.4f}')
+            logging.info(f'{args.clustering_input}_BE: {entropy_batch_mixing(adata.obsm[args.clustering_input], adata.obs.batch_indices):7.4f}')
+        k_bet = calculate_kbet_from_adata(adata, args.clustering_input)[2]
+        logging.info(f'{args.clustering_input}_kBET: {k_bet:7.4f}')
 
     if not args.no_draw:
         color_by = args.color_by if cluster_key is None else ([cluster_key] + args.color_by)
@@ -137,8 +146,8 @@ def evaluate(model: scETM, adata: anndata.AnnData, args, epoch,
     
     if args.result_tsv:
         with open(args.result_tsv, 'a+') as f:
-            # ckpt_dir, dataset_str, n_epochs, hidden_sizes, gene_dim, n_topics, dropout_prob, ari, nll, seed
-            f.write(f'{os.path.basename(args.ckpt_dir)}\t{args.dataset_str}\t{epoch}\t{args.hidden_sizes}\t{args.trainable_gene_emb_dim}\t{args.n_topics}\t{args.dropout_prob}\t{args.normed_loss}\t{best_ari}\t{nll}\t{args.seed}\n')
+            # ckpt_dir, dataset_str, n_epochs, hidden_sizes, gene_dim, n_topics, dropout_prob, ari, test_nll, seed
+            f.write(f'{os.path.basename(args.ckpt_dir)}\t{args.dataset_str}\t{epoch}\t{args.hidden_sizes}\t{args.trainable_gene_emb_dim}\t{args.n_topics}\t{args.dropout_prob}\t{args.normed_loss}\t{best_ari}\t{test_nll}\t{k_bet}\t{args.seed}\n')
 
 
 if __name__ == '__main__':
@@ -181,14 +190,14 @@ if __name__ == '__main__':
 
     # process dataset
     adata = process_dataset(adata, args)
-    test_adata = None
-    if args.test_ratio > 0:
-        adata, test_adata = train_test_split(adata, args.test_ratio)
+    train_adata, test_adata = adata, adata
+    if args.test_ratio > 0 and not args.eval:
+        train_adata, test_adata = train_test_split(adata, args.test_ratio)
     logging.info(repr(psutil.Process().memory_info()))
 
     start_time = time.time()
     # build model
-    model = scETM(adata, args)
+    model = scETM(train_adata, args)
     if torch.cuda.is_available():
         model = model.to(torch.device('cuda:0'))
     if args.restore_epoch:
@@ -204,6 +213,6 @@ if __name__ == '__main__':
     if args.eval:
         evaluate(model, adata, args, epoch, args.save_embeddings)
     else:
-        train(model, adata, args, epoch, test_adata)
+        train(model, train_adata, args, epoch, test_adata)
     duration = time.time() - start_time
     logging.info(f'Duration: {duration:.1f} s ({duration / 60:.1f} min)')

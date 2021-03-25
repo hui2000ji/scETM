@@ -23,25 +23,24 @@ def calculate_kbet_from_path(emb_path, data_path):
     emb = pickle.load(f)
     adata = ad.read_h5ad(data_path)
     adata.obsm['X_latent']=emb
-    kbet = calc_kBET(adata, 'batch_indices',
-                 rep='latent',
-                 K=25,
-                 alpha=0.05)
-    print('kBET acceptance rate: ', kbet[2])
-    return kbet
+    stat_mean, pvalue_mean, accept_rate = calc_kBET(adata, 'batch_indices',
+        rep='X_latent',
+        K=25,
+        alpha=0.05
+    )
+    return (stat_mean, pvalue_mean, accept_rate)
   
 
-def calculate_kbet_from_adata(adata, rep='latent', K=25, alpha=0.05, random_state=0, full_speed=True):
+def calculate_kbet_from_adata(adata, rep='X_latent', K=25, alpha=0.05, random_state=0, full_speed=True):
     '''adata object needs to have .obsm['X_latent'] and .obs['batch_indices']'''
-    kbet = calc_kBET(adata, 'batch_indices',
+    stat_mean, pvalue_mean, accept_rate = calc_kBET(adata, 'batch_indices',
         rep=rep,
         K=K,
         alpha=alpha,
         random_state=random_state,
         full_speed=full_speed
     )
-    print('kBET acceptance rate: ', kbet[2])
-    return kbet
+    return (stat_mean, pvalue_mean, accept_rate)
 
 
 def X_from_rep(data: ad.AnnData, rep: str) -> np.array:
@@ -50,10 +49,9 @@ def X_from_rep(data: ad.AnnData, rep: str) -> np.array:
     If rep is None, return data.X as a numpy array
     """
     if rep != "X":
-        rep_key = "X_" + rep
-        if rep_key not in data.obsm.keys():
+        if rep not in data.obsm.keys():
             raise ValueError("Cannot find {0} matrix. Please run {0} first".format(rep))
-        return data.obsm[rep_key]
+        return data.obsm[rep]
     else:
         return data.X if not issparse(data.X) else data.X.toarray()
 

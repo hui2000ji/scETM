@@ -35,7 +35,7 @@ parser.add_argument('--test-ratio', type=float, default=0.1, help='Amount of hel
 parser.add_argument('--batch-size', type=int, default=2000, help='Batch size for training')
 parser.add_argument('--input-batch-id', action='store_true', help='concatenate batch indices to the input to the model')
 parser.add_argument('--n-samplers', type=int, default=4, help='number of sampler thread')
-parser.add_argument('--no-be', action='store_true', help='do not calculate batch mixing entropy, which is very time consuming')
+parser.add_argument('--be', action='store_false', dest='no_be', help='calculate batch mixing entropy, which is very time consuming')
 parser.add_argument('--no-eval', action='store_true', help='only do training, do not evaluate')
 
 # Model save/restore parameters
