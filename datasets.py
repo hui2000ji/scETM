@@ -5,6 +5,8 @@ import pandas as pd
 import numpy as np
 import logging
 
+logger = logging.getLogger(__name__)
+
 
 def process_dataset(adata: anndata.AnnData, args):
     if args.subset_genes:
@@ -21,7 +23,7 @@ def process_dataset(adata: anndata.AnnData, args):
     if 'batch_indices' in adata.obs:
         batches = sorted(list(adata.obs.batch_indices.unique()))
         if isinstance(batches[-1], str) or batches[0] != 0 or batches[-1] + 1 != len(batches):
-            logging.info('Converting batch names to integers...')
+            logger.info('Converting batch names to integers...')
             adata.obs['batch_indices'] = adata.obs.batch_indices.apply(lambda x: batches.index(x))
         adata.obs.batch_indices = adata.obs.batch_indices.astype(str).astype('category')
 
@@ -31,11 +33,11 @@ def process_dataset(adata: anndata.AnnData, args):
         mat = pd.read_csv(args.pathway_csv_path, index_col=0)
         if args.trainable_gene_emb_dim == 0:
             genes = sorted(list(set(mat.index).intersection(adata.var_names)))
-            logging.info(f'Using {mat.shape[1]}-dim fixed gene embedding for {len(genes)} genes appeared in both the gene-pathway matrix and the dataset.')
+            logger.info(f'Using {mat.shape[1]}-dim fixed gene embedding for {len(genes)} genes appeared in both the gene-pathway matrix and the dataset.')
             adata = adata[:, genes]
             adata.varm['gene_emb'] = mat.loc[genes, :].values
         else:
-            logging.info(f'{mat.shape[1]} dimensions of the gene embeddings will be trainable. Keeping all genes in the dataset') 
+            logger.info(f'{mat.shape[1]} dimensions of the gene embeddings will be trainable. Keeping all genes in the dataset') 
             mat = mat.reindex(index = adata.var_names, fill_value=0.0)
             adata.varm['gene_emb'] = mat.values
     # if hasattr(args, 'color_by') and (hasattr(args, 'no_draw') and not args.no_draw) and (hasattr(args, 'no_eval') and not args.no_eval):
@@ -44,12 +46,12 @@ def process_dataset(adata: anndata.AnnData, args):
     if hasattr(args, 'max-supervised-weight') and args.max_supervised_weight:
         assert 'cell_types' in adata.obs, f"For supervised learning, the 'cell_types' column must be present in the adata.obs object."
 
-    logging.info(f'adata: {adata}')
+    logger.info(f'adata: {adata}')
     if 'batch_indices' in adata.obs:
-        logging.info(f'n_batches: {adata.obs.batch_indices.nunique()}')
+        logger.info(f'n_batches: {adata.obs.batch_indices.nunique()}')
     if not args.no_eval and 'cell_types' in adata.obs:
-        logging.info(f'n_labels: {adata.obs.cell_types.nunique()}')
-        logging.info(f'label counts:\n{adata.obs.cell_types.value_counts()}')
+        logger.info(f'n_labels: {adata.obs.cell_types.nunique()}')
+        logger.info(f'label counts:\n{adata.obs.cell_types.value_counts()}')
     return adata
 
 
@@ -59,7 +61,7 @@ def train_test_split(adata : anndata.AnnData, test_ratio=0.1, seed=1):
     train_indices = list(set(range(adata.n_obs)).difference(test_indices))
     train_adata = adata[adata.obs_names[train_indices], :]
     test_adata = adata[adata.obs_names[test_indices], :]
-    logging.info(f'Keeping {test_adata.n_obs} cells ({test_ratio:g}) as test data.')
+    logger.info(f'Keeping {test_adata.n_obs} cells ({test_ratio:g}) as test data.')
     return train_adata, test_adata
 
 

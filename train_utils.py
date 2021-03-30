@@ -11,6 +11,9 @@ from sklearn.neighbors import NearestNeighbors
 from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score
 from torch.functional import norm
 
+logger = logging.getLogger(__name__)
+
+
 def get_train_instance_name(args):
     strs = [
         args.dataset_str,
@@ -63,7 +66,7 @@ def get_kl_weight(args, epoch):
 
 
 def clustering(use_rep, adata, args):
-    logging.debug(f'Performing {args.clustering_method} clustering')
+    logger.debug(f'Performing {args.clustering_method} clustering')
     sc.pp.neighbors(adata, n_neighbors=args.n_neighbors, use_rep=use_rep)
     clustering_method = sc.tl.leiden if args.clustering_method == 'leiden' else sc.tl.louvain
     aris = []
@@ -76,9 +79,9 @@ def clustering(use_rep, adata, args):
         aris.append((res, ari, n_unique))
         if 'batch_indices' in adata.obs and adata.obs.batch_indices.nunique() > 1:
             ari_batch = adjusted_rand_score(adata.obs.batch_indices, adata.obs[col])
-            logging.info(f'Resolution: {res:5.3g}\tARI: {ari:7.4f}\tNMI: {nmi:7.4f}\tbARI: {ari_batch:7.4f}\t# labels: {n_unique}')
+            logger.info(f'Resolution: {res:5.3g}\tARI: {ari:7.4f}\tNMI: {nmi:7.4f}\tbARI: {ari_batch:7.4f}\t# labels: {n_unique}')
         else:
-            logging.info(f'Resolution: {res:5.3g}\tARI: {ari:7.4f}\tNMI: {nmi:7.4f}\t# labels: {n_unique}')
+            logger.info(f'Resolution: {res:5.3g}\tARI: {ari:7.4f}\tNMI: {nmi:7.4f}\t# labels: {n_unique}')
     
     aris.sort(key=lambda x: x[1], reverse=True)
     best_res, best_ari = aris[0][0], aris[0][1]
@@ -136,7 +139,7 @@ def _start_shell(local_ns):
 
 def entropy_batch_mixing(latent_space, batches, n_neighbors=50, n_pools=50, n_samples_per_pool=100):
     # code adapted from scGAN
-    logging.info('Calculating batch mixing entropy...')
+    logger.info('Calculating batch mixing entropy...')
     def entropy(hist_data):
         counts = pd.Series(hist_data).value_counts()
         freqs = counts / counts.sum()
@@ -166,11 +169,16 @@ def entropy_batch_mixing(latent_space, batches, n_neighbors=50, n_pools=50, n_sa
 
 
 def initialize_logger(ckpt_dir=None):
+    logger_ = logging.root
+    logger_.setLevel(logging.INFO)
+    formatter = logging.Formatter('[%(asctime)s] %(levelname)s - %(name)s: %(message)s')
     stream_handler = logging.StreamHandler()
+    stream_handler.setFormatter(formatter)
+    stream_handler.setLevel(logging.INFO)
+    logger_.addHandler(stream_handler)
     if ckpt_dir is not None:
         file_handler = logging.FileHandler(os.path.join(ckpt_dir, 'log.txt'))
-    logging.basicConfig(
-        handlers=[stream_handler] if ckpt_dir is None else [stream_handler, file_handler],
-        format='%(levelname)s [%(asctime)s]: %(message)s',
-        level=logging.INFO
-    )
+        file_handler.setFormatter(formatter)
+        file_handler.setLevel(logging.INFO)
+        logger_.addHandler(file_handler)
+    return logger_

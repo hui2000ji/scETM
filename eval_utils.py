@@ -11,7 +11,7 @@ import psutil
 _cpu_count = psutil.cpu_count(logical=False)
 if _cpu_count is None:
     _cpu_count = psutil.cpu_count(logical=True)
-
+logger = logging.getLogger(__name__)
 
 def eff_n_jobs(n_jobs: int) -> int:
     """ If n_jobs < 0, set it as the number of physical cores _cpu_count """
@@ -79,7 +79,7 @@ def calculate_nearest_neighbors(
         method = "sklearn"
 
     if nsample < K:
-        logging.warning(f"Warning: in calculate_nearest_neighbors, number of samples = {nsample} < K = {K}!\n Set K to {nsample}.")
+        logger.warning(f"Warning: in calculate_nearest_neighbors, number of samples = {nsample} < K = {K}!\n Set K to {nsample}.")
         K = nsample
 
     n_jobs = eff_n_jobs(n_jobs)

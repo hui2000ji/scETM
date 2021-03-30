@@ -23,6 +23,8 @@ from datasets import available_datasets, process_dataset, train_test_split
 from arg_parser import parser
 from model import scETM
 
+logger = logging.getLogger(__name__)
+
 
 def train(model: torch.nn.Module, adata: anndata.AnnData, args, epoch=0, test_adata : Union[None, anndata.AnnData]=None,
           device=torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')):
@@ -44,7 +46,7 @@ def train(model: torch.nn.Module, adata: anndata.AnnData, args, epoch=0, test_ad
     if args.restore_epoch:
         optimizer.load_state_dict(torch.load(os.path.join(
             args.ckpt_dir, f'opt-{args.restore_epoch}')))
-        logging.debug('Optimizer restored.')
+        logger.debug('Optimizer restored.')
 
     tracked_items = defaultdict(list)
 
@@ -80,16 +82,16 @@ def train(model: torch.nn.Module, adata: anndata.AnnData, args, epoch=0, test_ad
 
         # eval
         if epoch >= next_ckpt_epoch or epoch >= args.n_epochs:
-            logging.info('=' * 10 + f'Epoch {epoch:.0f}' + '=' * 10)
+            logger.info('=' * 10 + f'Epoch {epoch:.0f}' + '=' * 10)
 
             # log time and memory cost
-            logging.info(repr(psutil.Process().memory_info()))
+            logger.info(repr(psutil.Process().memory_info()))
             if args.lr_decay:
-                logging.info(f'lr: {args.lr}')
+                logger.info(f'lr: {args.lr}')
 
             # log statistics of tracked items
             for key, val in tracked_items.items():
-                logging.info(f'{key}: {np.mean(val):7.4f}')
+                logger.info(f'{key}: {np.mean(val):7.4f}')
             tracked_items = defaultdict(list)
             
             if not args.no_eval:
@@ -102,10 +104,10 @@ def train(model: torch.nn.Module, adata: anndata.AnnData, args, epoch=0, test_ad
                     torch.save(optimizer.state_dict(),
                             os.path.join(args.ckpt_dir, f'opt-{next_ckpt_epoch}'))
 
-            logging.info('=' * 10 + f'End of evaluation' + '=' * 10)
+            logger.info('=' * 10 + f'End of evaluation' + '=' * 10)
             next_ckpt_epoch += args.log_every
 
-    logging.info("Optimization Finished: %s" % args.ckpt_dir)
+    logger.info("Optimization Finished: %s" % args.ckpt_dir)
     if isinstance(sampler, CellSamplerPool):
         sampler.join(0.1)
 
@@ -117,8 +119,8 @@ def evaluate(model: scETM, adata: anndata.AnnData, args, epoch,
     
     model.eval()
     
-    _, test_nll = model.get_embedding_and_nll(test_adata)
-    logging.info(f'test nll: {test_nll:7.4f}')
+    embeddings, test_nll = model.get_embedding_and_nll(test_adata)
+    logger.info(f'test nll: {test_nll:7.4f}')
     if test_adata is not adata:
         embeddings, _ = model.get_embedding_and_nll(adata)
 
@@ -133,9 +135,9 @@ def evaluate(model: scETM, adata: anndata.AnnData, args, epoch,
     if adata.obs.batch_indices.nunique() > 1:
         if not args.no_be and \
             ((not args.eval and epoch == args.n_epochs) or (args.eval and epoch == args.restore_epoch)):
-            logging.info(f'{args.clustering_input}_BE: {entropy_batch_mixing(adata.obsm[args.clustering_input], adata.obs.batch_indices):7.4f}')
+            logger.info(f'{args.clustering_input}_BE: {entropy_batch_mixing(adata.obsm[args.clustering_input], adata.obs.batch_indices):7.4f}')
         k_bet = calculate_kbet_from_adata(adata, args.clustering_input)[2]
-        logging.info(f'{args.clustering_input}_kBET: {k_bet:7.4f}')
+        logger.info(f'{args.clustering_input}_kBET: {k_bet:7.4f}')
 
     if not args.no_draw:
         color_by = args.color_by if cluster_key is None else ([cluster_key] + args.color_by)
@@ -184,16 +186,16 @@ if __name__ == '__main__':
 
     # set up logger
     initialize_logger(args.ckpt_dir)
-    logging.info(f'argv: {" ".join(sys.argv)}')
-    logging.info(f'ckpt_dir: {args.ckpt_dir}')
-    logging.info(f'args: {repr(args)}')
+    logger.info(f'argv: {" ".join(sys.argv)}')
+    logger.info(f'ckpt_dir: {args.ckpt_dir}')
+    logger.info(f'args: {repr(args)}')
 
     # process dataset
     adata = process_dataset(adata, args)
     train_adata, test_adata = adata, adata
     if args.test_ratio > 0 and not args.eval:
         train_adata, test_adata = train_test_split(adata, args.test_ratio)
-    logging.info(repr(psutil.Process().memory_info()))
+    logger.info(psutil.Process().memory_info())
 
     start_time = time.time()
     # build model
@@ -203,8 +205,8 @@ if __name__ == '__main__':
     if args.restore_epoch:
         model.load_state_dict(torch.load(os.path.join(
             args.ckpt_dir, f'model-{args.restore_epoch}')))
-        logging.debug('Parameters restored.')
-    print(model)
+        logger.debug('Parameters restored.')
+    logger.info(model)
 
     # set up step and epoch
     epoch = args.restore_epoch if args.restore_epoch else 0
@@ -215,4 +217,4 @@ if __name__ == '__main__':
     else:
         train(model, train_adata, args, epoch, test_adata)
     duration = time.time() - start_time
-    logging.info(f'Duration: {duration:.1f} s ({duration / 60:.1f} min)')
+    logger.info(f'Duration: {duration:.1f} s ({duration / 60:.1f} min)')
