@@ -5,3 +5,5 @@ generate_script.ipynb
 scripts/eval.py
 *.sh
 *.csv
+build
+dist
