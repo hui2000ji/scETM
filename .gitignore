@@ -1,0 +1,7 @@
+results
+scETM.egg-info
+__pycache__
+generate_script.ipynb
+scripts/eval.py
+*.sh
+*.csv
