@@ -21,6 +21,7 @@ parser.add_argument('--max-kl-weight', type=float, default=1e-7, help='max weigh
 parser.add_argument('--min-kl-weight', type=float, default=0, help='min weight for kl divergence')
 parser.add_argument('--kl-warmup-ratio', type=float, default=1/3, help='gradually increase weight of the kl divergence loss during the first args.warmup_ratio training epochs; after args.warmup_ratio / 2, batch discriminator will start training')
 parser.add_argument('--no-normed-loss', action='store_false', dest='normed_loss', help='whether to normalize gene expression when calculating loss')
+parser.add_argument('--no-norm-cells', action='store_false', dest='norm_cells', help='whether to normalize gene expression at input')
 
 # Training parameters
 parser.add_argument('--seed', type=int, default=-1, help='Random seed')

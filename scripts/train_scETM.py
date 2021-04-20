@@ -65,6 +65,7 @@ if __name__ == '__main__':
         hidden_sizes = args.hidden_sizes,
         bn = not args.no_bn,
         dropout_prob = args.dropout_prob,
+        norm_cells = args.norm_cells,
         normed_loss = args.normed_loss,
         enable_batch_bias = args.batch_bias
     )
