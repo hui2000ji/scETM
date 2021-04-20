@@ -1,3 +1,4 @@
+from math import inf
 import os
 import logging
 import numpy as np
@@ -42,6 +43,9 @@ def evaluate(adata: ad.AnnData,
     """Evaluate the clustering and batch correction performance of the given
     embeddings, and optionally plot the embeddings.
 
+    WARNING: In an interactive environment, set n_jobs to 1 to avoid pickling
+    error.
+
     Args:
         adata: the dataset with the embedding to be evaluated.
         embedding_key: the key to the embedding. Must be in adata.obsm.
@@ -68,8 +72,9 @@ def evaluate(adata: ad.AnnData,
             physical cores.
 
     Returns:
-        A dict storing the ARI with cell type, ebm and kBET of the given
-        embeddings.
+        A dict storing the ari, nmi, ebm and k_bet of the cell embeddings with
+        key "ari", "nmi", "ebm", "k_bet", respectively. If draw is True and
+        return_fig is True, will also store the plotted figure with key "fig".
     """
 
     if not pd.api.types.is_categorical_dtype(adata.obs[cell_type_col]):
@@ -82,9 +87,9 @@ def evaluate(adata: ad.AnnData,
 
     # calculate clustering metrics
     if cell_type_col in adata.obs:
-        cluster_key, best_ari = clustering(adata, resolutions=resolutions, cell_type_col=cell_type_col, batch_col=batch_col, clustering_method=clustering_method)
+        cluster_key, best_ari, best_nmi = clustering(adata, resolutions=resolutions, cell_type_col=cell_type_col, batch_col=batch_col, clustering_method=clustering_method)
     else:
-        cluster_key, best_ari = None, None
+        cluster_key = best_ari = best_nmi = None
 
     # calculate batch correction metrics
     if batch_col and adata.obs[batch_col].nunique() > 1:
@@ -108,9 +113,10 @@ def evaluate(adata: ad.AnnData,
     
     return dict(
         best_ari=best_ari,
+        best_nmi=best_nmi,
         ebm=ebm,
         k_bet=k_bet,
-        fig = fig
+        fig=fig
     )
 
 
@@ -248,9 +254,10 @@ def _get_knn_indices(adata: ad.AnnData,
     else:
         assert 'neighbors' in adata.uns, 'No precomputed knn exists.'
         assert adata.uns['neighbors']['params']['n_neighbors'] >= n_neighbors, f"pre-computed n_neighbors is {adata.uns['neighbors']['params']['n_neighbors']}, which is smaller than {n_neighbors}"
-        indices = _knn_indices_from_dist(adata.obsp['distances'])
+        indices = adata.obsp['distances'].nonzero()[1].reshape(adata.n_obs, -1)
+        indices = indices[:, :n_neighbors - 1]
     knn_indices = np.concatenate(
-        (np.arange(nsample).reshape(-1, 1), indices[:, 0 : n_neighbors - 1]), axis=1
+        (np.arange(nsample).reshape(-1, 1), indices[:, :n_neighbors - 1]), axis=1
     )  # add query as 1-nn
     return knn_indices
 
@@ -409,11 +416,11 @@ def calculate_entropy_batch_mixing(
 
 def clustering(
     adata: ad.AnnData,
-    resolutions: Iterable[float],
+    resolutions: Sequence[float],
     clustering_method: str = "leiden",
     cell_type_col: str = "cell_types",
     batch_col: str = "batch_indices"
-) -> Tuple[str, float]:
+) -> Tuple[str, float, float]:
     """Cluster the data and calculate agreement with cell type and batch
     variable.
 
@@ -438,8 +445,10 @@ def clustering(
         best_cluster_key: a key in adata.obs to the best (in terms of ARI with
             cell type) cluster assignment column.
         best_ari: the best ARI with cell type.
-        
+        best_nmi: the best NMI with cell type.
     """
+
+    assert len(resolutions) > 0, f'Must specify at least one resolution.'
 
     if clustering_method == 'leiden':
         clustering_func: function = sc.tl.leiden
@@ -449,23 +458,25 @@ def clustering(
         raise ValueError("Please specify louvain or leiden for the clustering method argument.")
     _logger.info(f'Performing {clustering_method} clustering')
     assert cell_type_col in adata.obs, f"{cell_type_col} not in adata.obs"
-    aris = []
+    best_res, best_ari, best_nmi = None, -inf, -inf
     for res in resolutions:
         col = f'{clustering_method}_{res}'
         clustering_func(adata, resolution=res, key_added=col)
         ari = adjusted_rand_score(adata.obs[cell_type_col], adata.obs[col])
         nmi = normalized_mutual_info_score(adata.obs[cell_type_col], adata.obs[col])
         n_unique = adata.obs[col].nunique()
-        aris.append((res, ari, n_unique))
+        if ari > best_ari:
+            best_res = res
+            best_ari = ari
+        if nmi > best_nmi:
+            best_nmi = nmi
         if batch_col in adata.obs and adata.obs[batch_col].nunique() > 1:
             ari_batch = adjusted_rand_score(adata.obs[batch_col], adata.obs[col])
             _logger.info(f'Resolution: {res:5.3g}\tARI: {ari:7.4f}\tNMI: {nmi:7.4f}\tbARI: {ari_batch:7.4f}\t# labels: {n_unique}')
         else:
             _logger.info(f'Resolution: {res:5.3g}\tARI: {ari:7.4f}\tNMI: {nmi:7.4f}\t# labels: {n_unique}')
     
-    aris.sort(key=lambda x: x[1], reverse=True)
-    best_res, best_ari = aris[0][0], aris[0][1]
-    return f'{clustering_method}_{best_res}', best_ari
+    return f'{clustering_method}_{best_res}', best_ari, best_nmi
 
 
 def draw_embeddings(adata: ad.AnnData,
@@ -517,8 +528,3 @@ def draw_embeddings(adata: ad.AnnData,
         return fig
     fig.clf()
     plt.close(fig)
-
-
-def _knn_indices_from_dist(dist: Union[spmatrix, np.ndarray]) -> Union[spmatrix, np.ndarray]:
-    n_cells = dist.shape[0]
-    return dist.nonzero()[1].reshape(n_cells, -1)
