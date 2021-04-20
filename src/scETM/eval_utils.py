@@ -112,8 +112,8 @@ def evaluate(adata: ad.AnnData,
         fig = None
     
     return dict(
-        best_ari=best_ari,
-        best_nmi=best_nmi,
+        ari=best_ari,
+        nmi=best_nmi,
         ebm=ebm,
         k_bet=k_bet,
         fig=fig

@@ -28,8 +28,10 @@ if __name__ == '__main__':
         args.dataset_str = Path(args.h5ad_path).stem
     elif args.dataset_str == 'cortex':
         adata = scvi.dataset.CortexDataset('../data/cortex').to_anndata()
+    elif args.dataset_str == 'cortex_full':
+        adata = scvi.dataset.CortexDataset('../data/cortex', total_genes=None).to_anndata()
     elif args.dataset_str == 'hemato':
-        adata = scvi.dataset.CortexDataset('../data/hemato').to_anndata()
+        adata = scvi.dataset.HematoDataset('../data/hemato').to_anndata()
     elif args.dataset_str == 'prefrontalCortex':
         adata = scvi.dataset.PreFrontalCortexStarmapDataset('../data/PreFrontalCortex').to_anndata()
     else:

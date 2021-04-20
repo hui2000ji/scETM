@@ -298,12 +298,12 @@ class UnsupervisedTrainer:
                     result = evaluate(adata = self.adata, **current_eval_kwargs)
                     if eval_result_log_path is not None:
                         with open(eval_result_log_path, 'a+') as f:
-                            # ckpt_dir, epoch, test_nll, best_ari, best_nmi, k_bet, ebm, time, seed
+                            # ckpt_dir, epoch, test_nll, ari, nmi, k_bet, ebm, time, seed
                             f.write(f'{Path(self.ckpt_dir).name}\t'
                                     f'{self.epoch}\t'
                                     f'{test_nll}\t'
-                                    f'{result["best_ari"]}\t'
-                                    f'{result["best_nmi"]}\t'
+                                    f'{result["ari"]}\t'
+                                    f'{result["nmi"]}\t'
                                     f'{result["k_bet"]}\t'
                                     f'{result["ebm"]}\t'
                                     f'{time.strftime("%m_%d-%H_%M_%S")}\t'
