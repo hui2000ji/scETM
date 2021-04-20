@@ -222,7 +222,9 @@ def _calculate_kbet_for_one_chunk(knn_indices, attr_values, ideal_dist, n_neighb
     ns = knn_indices.shape[0]
     results = np.zeros((ns, 2))
     for i in range(ns):
-        _, observed_counts = np.unique(attr_values[knn_indices[i, :]], return_counts = True)
+        # NOTE: Do not use np.unique. Some of the batches may not be present in
+        # the neighborhood.
+        observed_counts = pd.Series(attr_values[knn_indices[i, :]]).value_counts(sort=False).values
         expected_counts = ideal_dist * n_neighbors
         stat = np.sum((observed_counts - expected_counts) ** 2 / expected_counts)
         p_value = 1 - chi2.cdf(stat, dof)
