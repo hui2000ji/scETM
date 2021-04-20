@@ -123,7 +123,7 @@ class scETM(BaseCellModel):
             device: device to store the model parameters.
         """
 
-        super().__init__(n_trainable_genes, n_batches, n_fixed_genes, need_batch=input_batch_id or enable_batch_bias, device=device)
+        super().__init__(n_trainable_genes, n_batches, n_fixed_genes, need_batch=n_batches > 1 and (input_batch_id or enable_batch_bias), device=device)
 
         self.n_topics: int = n_topics
         self.trainable_gene_emb_dim: int = trainable_gene_emb_dim
@@ -136,6 +136,10 @@ class scETM(BaseCellModel):
         self.input_batch_id: bool = input_batch_id
         self.enable_batch_bias: bool = enable_batch_bias
         self.enable_global_bias: bool = enable_global_bias
+        if self.n_batches <= 1:
+            _logger.warning(f'n_batches == {self.n_batches}, disabling batch bias')
+            self.enable_batch_bias = False
+            self.input_batch_id = False
 
         self.q_delta = get_fully_connected_layers(
             n_trainable_input=self.n_trainable_genes + ((self.n_batches - 1) if self.input_batch_id else 0),
@@ -193,10 +197,6 @@ class scETM(BaseCellModel):
 
     def _init_batch_and_global_biases(self):
         """Initializes batch and global biases given the constant attributes."""
-
-        if self.n_batches <= 1:
-            _logger.warning(f'n_batches == {self.n_batches}, disabling batch bias')
-            self.enable_batch_bias = False
 
         if self.enable_batch_bias:
             self.batch_bias = nn.Parameter(torch.randn(self.n_batches, self.n_fixed_genes + self.n_trainable_genes))

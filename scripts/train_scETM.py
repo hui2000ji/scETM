@@ -93,10 +93,9 @@ if __name__ == '__main__':
         max_kl_weight = args.max_kl_weight,
         save_model_ckpt = not args.no_model_ckpt,
         eval = not args.no_eval,
-        batch_col = 'batch_indices',
         record_log_path = os.path.join(trainer.ckpt_dir, 'record.tsv'),
         eval_result_log_path = os.path.join(args.ckpt_dir, 'result.tsv'),
-        eval_kwargs = dict(resolutions=args.resolutions, batch_col='batch_indices')
+        eval_kwargs = dict(resolutions=args.resolutions)
     )
 
     time_cost = time() - start_time
@@ -104,7 +103,7 @@ if __name__ == '__main__':
     logger.info(f'Duration: {time_cost:.1f} s ({time_cost / 60:.1f} min)')
     logger.info(f'After model instantiation and training: {psutil.Process().memory_info()}')
 
-    result = evaluate(model, adata,
+    result = evaluate(adata,
         resolutions = args.resolutions,
         plot_fname = f'{trainer.train_instance_name}_{trainer.model.clustering_input}_eval',
         plot_dir = trainer.ckpt_dir
