@@ -66,13 +66,13 @@ if __name__ == '__main__':
         bn = not args.no_bn,
         dropout_prob = args.dropout_prob,
         normed_loss = args.normed_loss,
-        enable_batch_bias = True
+        enable_batch_bias = args.batch_bias
     )
 
     trainer = UnsupervisedTrainer(
         model,
         adata,
-        train_instance_name = f"{args.dataset_str}_scETM_seed{args.seed}",
+        train_instance_name = f"{args.dataset_str}_scETM{args.log_str}_seed{args.seed}",
         seed = args.seed,
         ckpt_dir = args.ckpt_dir,
         batch_size = args.batch_size,

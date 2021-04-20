@@ -13,7 +13,7 @@ parser.add_argument('--dropout-prob', type=float, default=0.1, help='Dropout rat
 parser.add_argument('--trainable-gene-emb-dim', type=int, default=400, help='gene embedding dimensions')
 parser.add_argument('--no-bn', action='store_true', help='Disable batch normalization')
 parser.add_argument('--n-topics', type=int, default=50, help='number of topics in model')
-parser.add_argument('--batch-bias', action='store_true', help='enable batch-specific bias')
+parser.add_argument('--no-batch-bias', action='store_false', dest='batch_bias', help='enable batch-specific bias')
 parser.add_argument('--global-bias', action='store_true', help='enable global gene bias')
 
 # Loss parameters
