@@ -95,29 +95,30 @@ class scETM(BaseCellModel):
             n_trainable_genes: number of trainable genes.
             n_batches: number of batches in the dataset.
             n_fixed_genes: number of fixed_genes. Parameters in the input and
-                output layer related to these genes should be fixed. Useful for the
-                fine-tuning stage in transfer learning.
+                output layer related to these genes should be fixed. Useful for
+                the fine-tuning stage in transfer learning.
             n_topics: #topics in the model.
-            trainable_gene_emb_dim: # trainable dimensions of the gene embedding
-                (rho).
+            trainable_gene_emb_dim: # trainable dimensions of the gene
+                embedding (rho).
             hidden_sizes: hidden layer sizes in the cell encoder.
             bn: whether to enable batch normalization in the cell encoder.
             dropout_prob: dropout probability in the cell encoder.
-            normalize_beta: if True, will normalize beta before multiplying it with
-                theta, as in ETM. Otherwise, will multiply theta with beta and then
-                apply softmax to predict the gene distribution.
-            normed_loss: whether to use normalized counts to calculate nll loss.
+            normalize_beta: if True, will normalize beta before multiplying it
+                with theta, as in ETM. Otherwise, will multiply theta with beta
+                and then apply softmax to predict the gene distribution.
+            normed_loss: whether to use normalized counts to calculate nll
+                loss.
             norm_cells: whether to use normalized counts as model inputs.
             input_batch_id: whether to add batch indices as model inputs.
-            enable_batch_bias: whether to add a batch-specific bias at decoding.
-                If normalize_beta, this attribute is ignored.
+            enable_batch_bias: whether to add a batch-specific bias at
+                decoding. If normalize_beta, this attribute is ignored.
             enable_global_bias: whether to add a global bias at decoding.
             rho_fixed_emb: part of the gene embedding matrix (rho) with shape
-                [L_fixed, G], where everything is fixed. This could be a pathway-
-                gene matrix.
-            rho_trainable_emb: part of the gene embedding matrix (rho) with shape
-                [L_trainable, G], where a submatrix of shape [L_trainable, G_fixed]
-                is fixed and the rest is trainable.
+                [L_fixed, G], where everything is fixed. This could be a
+                pathway-gene matrix.
+            rho_trainable_emb: part of the gene embedding matrix (rho) with
+                shape [L_trainable, G], where a submatrix of shape
+                [L_trainable, G_fixed] is fixed and the rest is trainable.
             device: device to store the model parameters.
         """
 
@@ -158,6 +159,7 @@ class scETM(BaseCellModel):
         self.alpha = nn.Parameter(torch.randn(self.n_topics, self.trainable_gene_emb_dim + (self.rho_fixed_emb.shape[0] if self.rho_fixed_emb is not None else 0)))
         self._init_batch_and_global_biases()
 
+        self.to(device)
 
     def _init_encoder_first_layer(self):
         """Initialize the first layer of the encoder given the constant

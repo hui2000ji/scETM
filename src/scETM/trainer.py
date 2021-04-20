@@ -3,6 +3,7 @@ import copy
 from pathlib import Path
 import pandas as pd
 import time
+import random
 from typing import Sequence, Union, Tuple
 import psutil
 import logging
@@ -87,7 +88,7 @@ class UnsupervisedTrainer:
         if seed >= 0:
             self._set_seed(seed)
 
-        self.model: BaseCellModel = model.to(model.device)
+        self.model: BaseCellModel = model
 
         self.train_adata = self.test_adata = self.adata = adata
         if test_ratio > 0:
@@ -151,6 +152,7 @@ class UnsupervisedTrainer:
         torch.manual_seed(seed)
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
+        random.seed(seed)
         np.random.seed(seed)
         _logger.info(f'Set seed to {seed}.')
 
