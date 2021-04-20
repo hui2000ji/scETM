@@ -8,3 +8,4 @@ scripts/eval.py
 build
 dist
 logs
+data
