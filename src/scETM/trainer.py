@@ -4,7 +4,7 @@ from pathlib import Path
 import pandas as pd
 import time
 import random
-from typing import Sequence, Union, Tuple
+from typing import DefaultDict, IO, List, Sequence, Union, Tuple
 import psutil
 import logging
 from collections import defaultdict
@@ -117,7 +117,7 @@ class UnsupervisedTrainer:
 
     @log_arguments
     def load_ckpt(self, restore_epoch: int, ckpt_dir: Union[str, None] = None) -> None:
-        """Load model checkpoints.
+        """Loads model checkpoints.
 
         After loading, self.step, self.epoch and self.lr are set to
         the corresponding values, and the loger will be re-initialized.
@@ -143,7 +143,7 @@ class UnsupervisedTrainer:
 
     @staticmethod
     def _set_seed(seed: int) -> None:
-        """Set the random seed to seed.
+        """Sets the random seed to seed.
 
         Args:
             seed: the random seed.
@@ -164,7 +164,7 @@ class UnsupervisedTrainer:
         min_kl_weight: float = 0.,
         max_kl_weight: float = 1e-7
     ) -> float:
-        """Calculate weight of the KL term.
+        """Calculates weight of the KL term.
 
         Args:
             epoch: current epoch.
@@ -183,7 +183,7 @@ class UnsupervisedTrainer:
             return max_kl_weight
 
     def update_step(self, jump_to_step: Union[None, int] = None) -> None:
-        """Align the current step, epoch and lr to the given step number.
+        """Aligns the current step, epoch and lr to the given step number.
 
         Args:
             jump_to_step: the step number to jump to. If None, increment the
@@ -218,7 +218,7 @@ class UnsupervisedTrainer:
         eval_result_log_path: Union[str, None] = None,
         eval_kwargs: Union[None, dict] = None
     ) -> None:
-        """Train the model, and optionally evaluate and log results.
+        """Trains the model, optionally evaluates performance and logs results.
 
         Args:
             n_epochs: the total number of epochs to train the model.
@@ -290,11 +290,11 @@ class UnsupervisedTrainer:
                     current_eval_kwargs = eval_kwargs.copy()
                     current_eval_kwargs['plot_fname'] = current_eval_kwargs['plot_fname'] + f'_epoch{int(self.epoch)}'
                     if self.test_adata is not self.adata:
-                        test_nll = self.model.get_embeddings_and_nll(self.test_adata, self.batch_size, batch_col=batch_col)
+                        test_nll = self.model.get_cell_embeddings_and_nll(self.test_adata, self.batch_size, batch_col=batch_col)
                         _logger.info(f'test nll: {test_nll:7.4f}')
                     else:
                         test_nll = None
-                    self.model.get_embeddings_and_nll(self.adata, self.batch_size, batch_col=batch_col)
+                    self.model.get_cell_embeddings_and_nll(self.adata, self.batch_size, batch_col=batch_col)
                     result = evaluate(adata = self.adata, **current_eval_kwargs)
                     if eval_result_log_path is not None:
                         with open(eval_result_log_path, 'a+') as f:
@@ -324,19 +324,50 @@ class UnsupervisedTrainer:
 
 
 class _stats_recorder:
+    """A utility class for recording training statistics.
+
+    TODO: integrate with tensorboard.
+
+    Attributes:
+        record: the training statistics record.
+        fmt: print format for the training statistics.
+        log_file: the file stream to write logs to.
+    """
+
     def __init__(self, record_log_path: Union[str, None] = None, fmt: str = "12.4f") -> None:
-        self.record = defaultdict(list)
-        self.fmt = fmt
+        """Initializes the statistics recorder.
+        
+        Args:
+            record_log_path: the file path to write logs to.
+            fmt: print format for the training statistics.
+        """
+
+        self.record: DefaultDict[List] = defaultdict(list)
+        self.fmt: str = fmt
         if record_log_path is not None:
-            self.log_file = open(record_log_path, 'w')
-            self.header_logged = False
+            self.log_file: Union[None, IO] = open(record_log_path, 'w')
+            self._header_logged: bool = False
         else:
             self.log_file = None
 
-    def update(self, new_record: dict, epoch: float, total_epochs: int, next_ckpt_epoch: int):
+    def update(self, new_record: dict, epoch: float, total_epochs: int, next_ckpt_epoch: int) -> None:
+        """Updates the record and prints a \\r-terminated line to the console.
+
+        If self.log_file is not None, this function will also write a line of
+        log to self.log_file.
+
+        Args:
+            new_record: the latest training statistics to be added to
+                self.record.
+            epoch: current epoch.
+            total_epochs: total #epochs. Used for printing only.
+            next_ckpt_epoch: Next epoch for evaluation and checkpointing. Used
+                for printing only.
+        """
+
         if self.log_file is not None:
-            if not self.header_logged:
-                self.header_logged = True
+            if not self._header_logged:
+                self._header_logged = True
                 self.log_file.write('epoch\t' + '\t'.join(new_record.keys()) + '\n')
             self.log_file.write(f'{epoch}\t' + '\t'.join(map(str, new_record.values())) + '\n')
         for key, val in new_record.items():
@@ -344,12 +375,14 @@ class _stats_recorder:
             self.record[key].append(val)
         print(f'Epoch {int(epoch):5d}/{total_epochs:5d}\tNext ckpt: {next_ckpt_epoch:7d}', end='\r', flush=True)
 
-    def log_and_clear_record(self):
+    def log_and_clear_record(self) -> None:
+        """Logs record to logger and reset self.record."""
+
         for key, val in self.record.items():
             _logger.info(f'{key:12s}: {np.mean(val):{self.fmt}}')
         self.record = defaultdict(list)
 
-    def __del__(self):
+    def __del__(self) -> None:
         if self.log_file is not None:
             self.log_file.close()
 
@@ -359,7 +392,7 @@ def train_test_split(
     test_ratio: float = 0.1,
     seed: int = 1
 ) -> Tuple[anndata.AnnData, anndata.AnnData]:
-    """Split the adata into a training set and a test set.
+    """Splits the adata into a training set and a test set.
 
     Args:
         adata: the dataset to be splitted.
@@ -388,8 +421,8 @@ def prepare_for_transfer(
     fix_shared_genes: bool = False,
     batch_col: Union[str, None] = "batch_indices"
 ) -> Tuple[scETM, anndata.AnnData]:
-    """Prepare the model (trained on the source dataset) and target dataset for
-    transfer learning.
+    """Prepares the model (trained on the source dataset) and target dataset
+    for transfer learning.
 
     The source and target datasets need to have shared genes for knowledge
     transfer to be possible.

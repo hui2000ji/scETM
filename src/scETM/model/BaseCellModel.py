@@ -57,7 +57,7 @@ class BaseCellModel(nn.Module):
         data_dict: Mapping[str, torch.Tensor],
         hyper_param_dict: Mapping[str, Any]
     ) -> Mapping[str, torch.Tensor]:
-        """Execute a training step given a minibatch of data.
+        """Executes a training step given a minibatch of data.
 
         Set the model to train mode, run the forward pass, back propagate the
         gradients, step the optimizer, return the record for this step.
@@ -83,28 +83,32 @@ class BaseCellModel(nn.Module):
         optimizer.step()
         return new_record
 
-    def get_embeddings_and_nll(self,
+    def get_cell_embeddings_and_nll(self,
         adata: anndata.AnnData,
         batch_size: int = 2000,
         emb_names: Union[str, Iterable[str], None] = None,
         batch_col: str = 'batch_indices',
         inplace: bool = True
     ) -> Union[float, Tuple[Mapping[str, np.ndarray], float]]:
-        """Calculate embeddings and nll for the given dataset.
+        """Calculates cell embeddings and nll for the given dataset.
+
+        If inplace, cell embeddings will be stored to adata.obsm. You can
+        reference them by the keys in self.emb_names.
 
         Args:
             adata: the test dataset. adata.n_vars must equal to #genes of this
                 model.
             batch_size: batch size for test data input.
             emb_names: names of the embeddings to be returned or stored to
-                adata.obsm.
+                adata.obsm. Must be a subset of self.emb_names. If None,
+                default to self.emb_names.
             batch_col: a key in adata.obs to the batch column. Only used when
                 self.need_batch is True.
             inplace: whether embeddings will be stored to adata or returned.
 
         Returns:
-            If inplace, only the test nll. Otherwise, return the embeddings as
-            a dict and also the test nll.
+            If inplace, only the test nll. Otherwise, return the cell 
+            embeddings as a dict and also the test nll.
         """
 
         assert adata.n_vars == self.n_fixed_genes + self.n_trainable_genes

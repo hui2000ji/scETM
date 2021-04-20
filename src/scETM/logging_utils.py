@@ -6,7 +6,7 @@ _logger = logging.getLogger(__name__)
 
 
 def log_arguments(f):
-    """Log the arguments of the function on calling.
+    """Logs the arguments of the function on calling.
 
     Args:
         f: the decorated function whose arguments will be logged.
@@ -36,7 +36,7 @@ def log_arguments(f):
 
 
 def initialize_logger(ckpt_dir=None, level=logging.INFO, logger=None) -> None:
-    """Initialize the scETM logger, or the provided logger.
+    """Initializes the scETM logger, or the provided logger.
 
     Each time the function is called, close all file handlers of the scETM
     logger and create one logging to "ckpt_dir/log.txt" if ckpt_dir is not

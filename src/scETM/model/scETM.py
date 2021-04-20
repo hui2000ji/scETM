@@ -1,4 +1,5 @@
-from typing import Any, Iterable, Mapping, Sequence, Union
+from typing import Any, Iterable, Mapping, Sequence, Tuple, Union
+import anndata
 import numpy as np
 import logging
 from scipy.sparse import spmatrix
@@ -161,8 +162,20 @@ class scETM(BaseCellModel):
 
         self.to(device)
 
+    @property
+    def rho(self):
+        """The fixed and trainable combined gene embedding rho.
+
+        This is a read-only property. To modify the gene embeddings, please
+        change self.rho_fixed_emb and self.rho_trainable_emb.
+        """
+
+        rho = [param for param in (self.rho_fixed_emb, self.rho_trainable_emb.get_param()) if param is not None]
+        rho = torch.cat(rho, dim=0) if len(rho) > 1 else rho[0]
+        return rho
+
     def _init_encoder_first_layer(self):
-        """Initialize the first layer of the encoder given the constant
+        """Initializes the first layer of the encoder given the constant
         attributes.
         """
 
@@ -173,13 +186,13 @@ class scETM(BaseCellModel):
             self.q_delta[0] = nn.Linear(trainable_dim, self.hidden_sizes[0])
 
     def _init_rho_trainable_emb(self):
-        """Initialize self.rho_trainable_emb given the constant attributes."""
+        """Initializes self.rho_trainable_emb given the constant attributes."""
 
         if self.trainable_gene_emb_dim > 0:
             self.rho_trainable_emb = PartlyTrainableParameter2D(self.trainable_gene_emb_dim, self.n_fixed_genes, self.n_trainable_genes)
 
     def _init_batch_and_global_biases(self):
-        """Initialize batch and global biases given the constant attributes."""
+        """Initializes batch and global biases given the constant attributes."""
 
         if self.n_batches <= 1:
             _logger.warning(f'n_batches == {self.n_batches}, disabling batch bias')
@@ -191,7 +204,7 @@ class scETM(BaseCellModel):
         self.global_bias = nn.Parameter(torch.randn(1, self.n_fixed_genes + self.n_trainable_genes)) if self.enable_global_bias else None
     
     def _get_batch_indices_oh(self, data_dict: Mapping[str, torch.Tensor]):
-        """Get one-hot encodings of the batch indices.
+        """Gets one-hot encodings of the batch indices.
         Avoid repeated computations if possible.
 
         Args:
@@ -216,7 +229,7 @@ class scETM(BaseCellModel):
         theta: torch.Tensor,
         batch_indices: Union[None, torch.Tensor]
     ) -> torch.Tensor:
-        """Decode the topic proportions (theta) to gene expression profiles.
+        """Decodes the topic proportions (theta) to gene expression profiles.
 
         Args:
             theta: the topic proportions for cells in the current batch.
@@ -226,9 +239,7 @@ class scETM(BaseCellModel):
             Log of decoded gene expression profile reconstructions.
         """
 
-        rho = [param for param in (self.rho_fixed_emb, self.rho_trainable_emb.get_param()) if param is not None]
-        rho = torch.cat(rho, dim=0) if len(rho) > 1 else rho[0]
-        beta = self.alpha @ rho
+        beta = self.alpha @ self.rho
 
         if self.normalize_beta:
             recon = torch.mm(theta, F.softmax(beta, dim=-1))
@@ -305,3 +316,44 @@ class scETM(BaseCellModel):
         )
         
         return loss, fwd_dict, record
+
+    def get_embeddings_and_nll(self,
+        adata: anndata.AnnData,
+        batch_size: int,
+        emb_names: Union[str, Iterable[str], None],
+        batch_col: str,
+        inplace: bool
+    ) -> Union[float, Tuple[Mapping[str, np.ndarray], float]]:
+        """Calculates cell, gene, topic embeddings and nll for the dataset.
+
+        If inplace, cell embeddings will be stored to adata.obsm. You can
+        reference them by the keys in self.emb_names. Gene embeddings will be
+        stored to adata.varm with the key "rho". Topic embeddings will be
+        stored to adata.uns with the key "alpha".
+
+        Args:
+            adata: the test dataset. adata.n_vars must equal to #genes of this
+                model.
+            batch_size: batch size for test data input.
+            emb_names: names of the embeddings to be returned or stored to
+                adata.obsm. Must be a subset of self.emb_names. If None,
+                default to self.emb_names.
+            batch_col: a key in adata.obs to the batch column. Only used when
+                self.need_batch is True.
+            inplace: whether embeddings will be stored to adata or returned.
+
+        Returns:
+            If inplace, only the test nll. Otherwise, return the cell, gene and
+            topic embeddings as a dict and also the test nll.
+        """
+
+        result = super().get_cell_embeddings_and_nll(adata, batch_size=batch_size, emb_names=emb_names, batch_col=batch_col, inplace=inplace)
+        if inplace:
+            adata.varm['rho'] = self.rho
+            adata.uns['alpha'] = self.alpha
+            return result
+        else:
+            result_dict, nll = result
+            result_dict['rho'] = self.rho
+            result_dict['alpha'] = self.alpha
+            return result_dict, nll

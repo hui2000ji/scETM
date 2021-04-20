@@ -343,7 +343,7 @@ class Pipeline:
     """
 
     def __init__(self) -> None:
-        """Initialize the Pipeline object.
+        """Initializes the Pipeline object.
 
         Initialize the attributes, then lock the consumer_lock.
         """
@@ -354,7 +354,7 @@ class Pipeline:
         self.consumer_lock.acquire()
 
     def get_message(self) -> Any:
-        """Read message from the producer. Called by the consumer.
+        """Reads message from the producer. Called by the consumer.
         """
 
         self.consumer_lock.acquire()
@@ -363,7 +363,7 @@ class Pipeline:
         return message
 
     def set_message(self, message: Any) -> None:
-        """Write message to the consumer. Called by the producer.
+        """Writes message to the consumer. Called by the producer.
         """
 
         self.producer_lock.acquire()

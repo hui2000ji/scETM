@@ -40,8 +40,8 @@ def evaluate(adata: ad.AnnData,
     spread: float = 1,
     n_jobs: int = -1,
 ) -> Mapping[str, Union[float, None, Figure]]:
-    """Evaluate the clustering and batch correction performance of the given
-    embeddings, and optionally plot the embeddings.
+    """Evaluates the clustering and batch correction performance of the given
+    embeddings, and optionally plots the embeddings.
 
     WARNING: In an interactive environment, set n_jobs to 1 to avoid pickling
     error.
@@ -136,7 +136,7 @@ def calculate_nearest_neighbors(
     random_state: int = 0,
     full_speed: int = False,
 ) -> Tuple[np.ndarray, np.ndarray]:
-    """Calculate nearest neighbors graph for the given data.
+    """Calculates the nearest neighbors graph for the given data.
 
     Args:
         X: the sample-by-feature matrix.
@@ -273,7 +273,7 @@ def calculate_kbet(
     n_jobs: int = -1,
     calc_knn: bool = True
 ) -> Tuple[float, float, float]:
-    """Calculate the kBET metric of the data.
+    """Calculates the kBET metric of the data.
 
     kBET measures if cells from different batches mix well in their local
     neighborhood.
@@ -371,7 +371,7 @@ def calculate_entropy_batch_mixing(
     n_jobs: int = -1,
     calc_knn: bool = True
 ) -> float:
-    """Calculate the entropy of batch mixing of the data.
+    """Calculates the entropy of batch mixing of the data.
 
     kBET measures if cells from different batches mix well in their local
     neighborhood.
@@ -421,7 +421,7 @@ def clustering(
     cell_type_col: str = "cell_types",
     batch_col: str = "batch_indices"
 ) -> Tuple[str, float, float]:
-    """Cluster the data and calculate agreement with cell type and batch
+    """Clusters the data and calculate agreement with cell type and batch
     variable.
 
     This method cluster the neighborhood graph (requires having run sc.pp.
@@ -488,7 +488,7 @@ def draw_embeddings(adata: ad.AnnData,
         return_fig: bool = False,
         dpi: int = 300
     ) -> Union[None, Figure]:
-    """Embed, plot and optionally save the neighborhood graph with UMAP.
+    """Embeds, plots and optionally saves the neighborhood graph with UMAP.
 
     Requires having run sc.pp.neighbors first.
 
