@@ -25,7 +25,7 @@ parser.add_argument('--no-norm-cells', action='store_false', dest='norm_cells', 
 
 # Training parameters
 parser.add_argument('--seed', type=int, default=-1, help='Random seed')
-parser.add_argument('--data-split-seed', type=int, default=-1, help='Random seed')
+parser.add_argument('--data-split-seed', type=int, default=1, help='data split random seed')
 parser.add_argument('--n-epochs', type=int, default=2400, help='Number of epochs to train')
 parser.add_argument('--eval-every', type=int, default=400, help='Number of epochs between loggings')
 parser.add_argument('--lr', type=float, default=0.02, help='Initial learning rate')
