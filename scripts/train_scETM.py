@@ -59,7 +59,7 @@ if __name__ == '__main__':
 
     model = scETM(
         n_trainable_genes = adata.n_vars,
-        n_batches = adata.obs.cell_types.nunique(),
+        n_batches = adata.obs.batch_indices.nunique(),
         n_topics = args.n_topics,
         trainable_gene_emb_dim = args.trainable_gene_emb_dim,
         hidden_sizes = args.hidden_sizes,
@@ -93,7 +93,7 @@ if __name__ == '__main__':
         max_kl_weight = args.max_kl_weight,
         save_model_ckpt = not args.no_model_ckpt,
         eval = not args.no_eval,
-        batch_col = 'cell_types',
+        batch_col = 'batch_indices',
         record_log_path = os.path.join(trainer.ckpt_dir, 'record.tsv'),
         eval_result_log_path = os.path.join(args.ckpt_dir, 'result.tsv'),
         eval_kwargs = dict(resolutions=args.resolutions, batch_col='batch_indices')
