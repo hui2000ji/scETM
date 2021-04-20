@@ -1,4 +1,5 @@
 import anndata
+import random
 import scanpy as sc
 from pathlib import Path
 import scanpy as sc
@@ -25,8 +26,13 @@ if __name__ == '__main__':
     parser.add_argument('--no-be', action='store_true', help='do not calculate batch mixing entropy')
     parser.add_argument('--no-eval', action='store_true', help='quit immediately after training')
     parser.add_argument('--dim-red', type=int, default=50, help='reduce the raw data into this many features before integrating')
+    parser.add_argument('--seed', type=int, default=-1, help='set seed')
     add_plotting_arguments(parser)
     args = parser.parse_args()
+
+    if args.seed >= 0:
+        random.seed(args.seed)
+        np.random.seed(args.seed)
 
     matplotlib.use('Agg')
     sc.settings.set_figure_params(
@@ -36,10 +42,11 @@ if __name__ == '__main__':
     adata = anndata.read_h5ad(args.h5ad_path)
     dataset_name = Path(args.h5ad_path).stem
     adata.obs_names_make_unique()
-    args.ckpt_dir = os.path.join(args.ckpt_dir, f'{dataset_name}_Harmony_{strftime("%m_%d-%H_%M_%S")}')
-    os.makedirs(args.ckpt_dir)
+    ckpt_dir = os.path.join(args.ckpt_dir, f'{dataset_name}_Harmony_{strftime("%m_%d-%H_%M_%S")}')
+    os.makedirs(ckpt_dir)
 
     start_time = time()
+    start_mem = psutil.Process().memory_info().rss
     logger.info(f'Before model instantiation and training: {psutil.Process().memory_info()}')
 
     # preprocess
@@ -55,20 +62,15 @@ if __name__ == '__main__':
 
     ho = hm.run_harmony(data_mat, metadata=adata.obs, vars_use=['batch_indices'], max_iter_harmony=100)
 
-    duration = time() - start_time
-    logger.info(f'Duration: {duration:.1f} s ({duration / 60:.1f} min)')
-
-
-    if os.path.exists('/proc/self/status'):
-        with open('/proc/self/status') as f:
-            text = f.read()
-        rss = text.split('VmRSS:')[1].split('\n')[0]
-        vmpeak = text.split('VmPeak:')[1].split('\n')[0]
-        logger.info('RSS: ' + rss.strip())
-        logger.info('peak: ' + vmpeak.strip())
+    time_cost = time() - start_time
+    mem_cost = psutil.Process().memory_info().rss - start_mem
+    logger.info(f'Duration: {time_cost:.1f} s ({time_cost / 60:.1f} min)')
     logger.info(f'After model instantiation and training: {psutil.Process().memory_info()}')
 
     if not args.no_eval:
         adata.obsm["Harmony"] = ho.result().T
-        evaluate(adata, embedding_key = "Harmony", resolutions = args.resolutions, plot_dir = args.ckpt_dir)
+        result = evaluate(adata, embedding_key = "Harmony", resolutions = args.resolutions, plot_dir = ckpt_dir)
+        with open(os.path.join(args.ckpt_dir, 'table1.tsv'), 'a+') as f:
+            # dataset, model, seed, ari, nmi, ebm, k_bet
+            f.write(f'{args.dataset_str}\tHarmony\t{args.seed}\t{result["ari"]}\t{result["nmi"]}\t{result["ebm"]}\t{result["k_bet"]}\t{time_cost}\t{mem_cost}\n', flush=True)
 

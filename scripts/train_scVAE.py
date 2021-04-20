@@ -3,6 +3,8 @@ import scanpy as sc
 import matplotlib
 import matplotlib.pyplot as plt
 import os
+import random
+import tensorflow as tf
 from scETM import initialize_logger, evaluate
 
 import scvae
@@ -289,9 +291,15 @@ if __name__ == '__main__':
     parser.add_argument('--run-id', type=str, default='', help="a string to distinguish different runs")
     parser.add_argument('--no-be', action='store_true', help='do not calculate batch mixing entropy')
     parser.add_argument('--no-eval', action='store_true', help='quit immediately after training')
+    parser.add_argument('--seed', type=int, default=-1, help='set seed')
     add_plotting_arguments(parser)
-
     args = parser.parse_args()
+
+    if args.seed >= 0:
+        random.seed(args.seed)
+        np.random.seed(args.seed)
+        tf.random.set_random_seed(args.seed)
+
     matplotlib.use('Agg')
     sc.settings.set_figure_params(
         dpi=args.dpi_show, dpi_save=args.dpi_save, facecolor='white', fontsize=args.fontsize, figsize=args.figsize)
@@ -300,14 +308,17 @@ if __name__ == '__main__':
     dataset_str = Path(args.h5ad_path).stem
     if args.batch_removal:
         dataset_str = dataset_str + '_batch'
-    os.makedirs(os.path.join(args.ckpt_dir, dataset_str.lower()), exist_ok=True)
+    ckpt_dir = os.path.join(args.ckpt_dir, dataset_str.lower())
+    os.makedirs(ckpt_dir, exist_ok=True)
 
     if args.n_labels == -1:
         args.n_labels = adata.obs.cell_types.nunique() if not args.no_eval else 1
+
+    start_time = time()
+    start_mem = psutil.Process().memory_info().rss
     logger.info(f'Before model instantiation and training: {psutil.Process().memory_info()}')
 
     from scipy.sparse import csr_matrix
-    start_time = time()
     data_set = DataSet(dataset_str,
         title=dataset_str,
         specifications=dict(),
@@ -336,15 +347,9 @@ if __name__ == '__main__':
         minibatch_size=args.batch_size,
         learning_rate=args.lr
     )
-    duration = time() - start_time
-    logger.info(f'Duration: {duration:.1f} s ({duration / 60:.1f} min)')
-    if os.path.exists('/proc/self/status'):
-        with open('/proc/self/status') as f:
-            text = f.read()
-        rss = text.split('VmRSS:')[1].split('\n')[0]
-        vmpeak = text.split('VmPeak:')[1].split('\n')[0]
-        logger.info('RSS: ' + rss.strip())
-        logger.info('peak: ' + vmpeak.strip())
+    time_cost = time() - start_time
+    mem_cost = psutil.Process().memory_info().rss - start_mem
+    logger.info(f'Duration: {time_cost:.1f} s ({time_cost / 60:.1f} min)')
     logger.info(f'After model instantiation and training: {psutil.Process().memory_info()}')
 
     if not args.no_eval:
@@ -354,4 +359,8 @@ if __name__ == '__main__':
             logger.info(f'ARI_batch: {adjusted_rand_score(adata.obs.batch_indices, labels)}')
             logger.info(f'NMI_batch: {normalized_mutual_info_score(adata.obs.batch_indices, labels)}')
         adata.obsm['scVAE'] = latent
-        evaluate(adata, embedding_key = "scVAE", resolutions = args.resolutions, plot_dir = args.ckpt_dir)
+        result = evaluate(adata, embedding_key = "scVAE", resolutions = args.resolutions, plot_dir = ckpt_dir)
+        with open(os.path.join(args.ckpt_dir, 'table1.tsv'), 'a+') as f:
+            model_name = "scVAEBatch" if args.batch_removal else "scVAE"
+            # dataset, model, seed, ari, nmi, ebm, k_bet
+            f.write(f'{args.dataset_str}\t{model_name}\t{args.seed}\t{result["ari"]}\t{result["nmi"]}\t{result["ebm"]}\t{result["k_bet"]}\t{time_cost}\t{mem_cost}\n', flush=True)

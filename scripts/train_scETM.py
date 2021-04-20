@@ -1,12 +1,14 @@
+import psutil
 from arg_parser import parser
 import os
+from time import time
 import scanpy as sc
 import scvi.dataset
 import anndata
 import pandas as pd
 import logging
 from pathlib import Path
-from scETM import scETM, UnsupervisedTrainer, initialize_logger
+from scETM import scETM, UnsupervisedTrainer, initialize_logger, evaluate
 import matplotlib
 
 logger = logging.getLogger(__name__)
@@ -51,6 +53,10 @@ if __name__ == '__main__':
         for col_name in args.color_by:
             assert col_name in adata.obs, f"{col_name} in args.color_by but not in adata.obs"
 
+    start_time = time()
+    start_mem = psutil.Process().memory_info().rss
+    logger.info(f'Before model instantiation and training: {psutil.Process().memory_info()}')
+
     model = scETM(
         n_trainable_genes = adata.n_vars,
         n_batches = adata.obs.cell_types.nunique(),
@@ -91,3 +97,17 @@ if __name__ == '__main__':
         eval_result_log_path = os.path.join(args.ckpt_dir, 'result.tsv'),
         eval_kwargs = dict(resolutions=args.resolutions, batch_col='batch_indices')
     )
+
+    time_cost = time() - start_time
+    mem_cost = psutil.Process().memory_info().rss - start_mem
+    logger.info(f'Duration: {time_cost:.1f} s ({time_cost / 60:.1f} min)')
+    logger.info(f'After model instantiation and training: {psutil.Process().memory_info()}')
+
+    result = evaluate(model, adata,
+        resolutions = args.resolutions,
+        plot_fname = f'{trainer.train_instance_name}_{trainer.model.clustering_input}_eval',
+        plot_dir = trainer.ckpt_dir
+    )
+    with open(os.path.join(args.ckpt_dir, 'table1.tsv'), 'a+') as f:
+        # dataset, model, seed, ari, nmi, ebm, k_bet, time_cost, mem_cost
+        f.write(f'{args.dataset_str}\tscETM\t{args.seed}\t{result["ari"]}\t{result["nmi"]}\t{result["ebm"]}\t{result["k_bet"]}\t{time_cost}\t{mem_cost}\n', flush=True)

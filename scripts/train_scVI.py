@@ -45,16 +45,17 @@ if __name__ == '__main__':
     if args.batch_removal:
         args.model = args.model + 'batch'
     if not args.restore:
-        args.ckpt_dir = os.path.join(args.ckpt_dir, f"{dataset_name}_{args.model}_{strftime('%m_%d-%H_%M_%S')}")
-        os.makedirs(args.ckpt_dir)
+        ckpt_dir = os.path.join(args.ckpt_dir, f"{dataset_name}_{args.model}_{strftime('%m_%d-%H_%M_%S')}")
+        os.makedirs(ckpt_dir)
 
 
     from scvi.dataset import AnnDatasetFromAnnData
     from scvi.models import VAE, LDVAE
     from scvi.inference import UnsupervisedTrainer, load_posterior
     start_time = time()
-
+    start_mem = psutil.Process().memory_info().rss
     logger.info(f'Before model instantiation and training: {psutil.Process().memory_info()}')
+
     dataset = AnnDatasetFromAnnData(adata)
 
     if args.model.startswith('VAE'):
@@ -77,7 +78,7 @@ if __name__ == '__main__':
         )
 
     if args.restore:
-        full = load_posterior(os.path.join(args.ckpt_dir, 'posterior'), model=model, use_cuda=torch.cuda.is_available())
+        full = load_posterior(os.path.join(ckpt_dir, 'posterior'), model=model, use_cuda=torch.cuda.is_available())
     else:
         trainer = UnsupervisedTrainer(
             model,
@@ -91,22 +92,19 @@ if __name__ == '__main__':
         full = trainer.create_posterior(trainer.model, dataset, indices=np.arange(len(dataset)))
         full = full.update({"batch_size": 64})
 
-        full.save_posterior(os.path.join(args.ckpt_dir, 'posterior'))
+        full.save_posterior(os.path.join(ckpt_dir, 'posterior'))
     
     latent, batch_indices, labels = full.sequential().get_latent()
     batch_indices = batch_indices.ravel()
 
-    duration = time() - start_time
-    logger.info(f'Duration: {duration:.1f} s ({duration / 60:.1f} min)')
-    if os.path.exists('/proc/self/status'):
-        with open('/proc/self/status') as f:
-            text = f.read()
-        rss = text.split('VmRSS:')[1].split('\n')[0]
-        vmpeak = text.split('VmPeak:')[1].split('\n')[0]
-        logger.info('RSS: ' + rss.strip())
-        logger.info('peak: ' + vmpeak.strip())
+    time_cost = time() - start_time
+    mem_cost = psutil.Process().memory_info().rss - start_mem
+    logger.info(f'Duration: {time_cost:.1f} s ({time_cost / 60:.1f} min)')
     logger.info(f'After model instantiation and training: {psutil.Process().memory_info()}')
 
     if not args.no_eval:
         adata.obsm["scVI"] = latent
-        evaluate(adata, embedding_key = "scVI", resolutions = args.resolutions, plot_dir = args.ckpt_dir)
+        result = evaluate(adata, embedding_key = "scVI", resolutions = args.resolutions, plot_dir = ckpt_dir)
+        with open(os.path.join(args.ckpt_dir, 'table1.tsv'), 'a+') as f:
+            # dataset, model, seed, ari, nmi, ebm, k_bet
+            f.write(f'{args.dataset_str}\t{args.model}\t{args.seed}\t{result["ari"]}\t{result["nmi"]}\t{result["ebm"]}\t{result["k_bet"]}\t{time_cost}\t{mem_cost}\n', flush=True)

@@ -20,6 +20,7 @@ print_memory_usage <- function() {
         }
         writeLines(sprintf("%s\t%s", name, as.character(py_get_attr(pmem, name))))
     }
+    return(pmem$rss)
 }
 
 parser <- ArgumentParser()
@@ -28,7 +29,12 @@ parser$add_argument("--resolutions", type = "double", nargs = "+", default = c(0
 parser$add_argument("--subset-genes", type = "integer", default = 3000, help = "number of features (genes) to select, 0 for don't select")
 parser$add_argument("--no-eval", action = "store_true", help = "do not eval")
 parser$add_argument("--ckpt-dir", type = "character", help="path to checkpoint directory", default = file.path("..", "results"))
+parser$add_argument("--seed", type = "integer", default = -1, help = "random seed.")
 args <- parser$parse_args()
+
+if (args$seed >= 0) {
+    set.seed(args$seed)
+}
 
 library(reticulate)
 reticulate::use_python("python")
@@ -52,16 +58,16 @@ batches <- names(table(metadata$batch_indices))
 print(batches)
 genes_use <- row.names(seurat_obj@assays$RNA@data)[rowSums(seurat_obj@assays$RNA@data) > 0]
 
-args$ckpt_dir <- file.path(args$ckpt_dir, sprintf("%s_Liger%d_%s", dataset_str, args$subset_genes, strftime(Sys.time(),"%m_%d-%H_%M_%S")))
-if (!dir.exists((args$ckpt_dir))) {
-    dir.create(args$ckpt_dir)
+ckpt_dir <- file.path(args$ckpt_dir, sprintf("%s_Liger%d_%s", dataset_str, args$subset_genes, strftime(Sys.time(),"%m_%d-%H_%M_%S")))
+if (!dir.exists((ckpt_dir))) {
+    dir.create(ckpt_dir)
 }
 scETM <- import("scETM")
-scETM$initialize_logger(ckpt_dir = args$ckpt_dir)
+scETM$initialize_logger(ckpt_dir = ckpt_dir)
 
 # Run algo, print result and save images
-start <- proc.time()
-print_memory_usage()
+start_time <- proc.time()[3]
+start_mem <- print_memory_usage()
 
 dataset_list <- list()
 for (i in seq_along(batches)) {
@@ -77,10 +83,10 @@ dataset <- scaleNotCenter(dataset)
 dataset <- optimizeALS(dataset, k = 20, lambda = 5)
 dataset <- quantile_norm(dataset, knn_k = 20)
 
-print(proc.time() - start)
-print_memory_usage()
+time_cost <- proc.time()[3] - start
+mem_cost <- print_memory_usage() - start_mem
 
-fpath <- file.path(args$ckpt_dir, sprintf("%s_Liger.h5ad", dataset_str))
+fpath <- file.path(ckpt_dir, sprintf("%s_Liger.h5ad", dataset_str))
 anndata <- import("anndata")
 processed_data <- anndata$AnnData(
     X = t(do.call(cbind, dataset@raw.data)),
@@ -92,11 +98,16 @@ processed_data$write_h5ad(fpath)
 
 if (!args$no_eval) {
     scETM <- import("scETM")
-    scETM$evaluate(
+    result <- scETM$evaluate(
         processed_data,
         embedding_key = "H_norm",
         resolutions = args$resolutions,
-        plot_dir = args$ckpt_dir,
+        plot_dir = ckpt_dir,
         n_jobs = 1L
     )
+    line <- sprintf("%s\tLiger\t%s\t%.4f\t%.4f\t%.5f\t%.5f\t%.2f\t%d\n",
+        dataset_str, args$seed,
+        result$ari, result$nmi, result$ebm, result$k_bet,
+        time_cost, mem_cost)
+    write(line, file = file.path(args$ckpt_dir, "table1.tsv"), append = T)
 }
