@@ -5,7 +5,7 @@ library(cowplot)
 library(argparse)
 library(aricode)
 library(future)
-plan("multiprocess", workers = 4L)
+plan("multiprocess", workers = parallel::detectCores(logical = F))
 library(reticulate)
 reticulate::use_python("python")
 
