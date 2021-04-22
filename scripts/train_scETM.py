@@ -112,4 +112,4 @@ if __name__ == '__main__':
     )
     with open(os.path.join(args.ckpt_dir, 'table1.tsv'), 'a+') as f:
         # dataset, model, seed, ari, nmi, ebm, k_bet, time_cost, mem_cost
-        f.write(f'{args.dataset_str}\tscETM\t{args.seed}\t{result["ari"]}\t{result["nmi"]}\t{result["ebm"]}\t{result["k_bet"]}\t{time_cost}\t{mem_cost}\n', flush=True)
+        f.write(f'{args.dataset_str}\tscETM\t{args.seed}\t{result["ari"]}\t{result["nmi"]}\t{result["ebm"]}\t{result["k_bet"]}\t{time_cost}\t{mem_cost}\n')
