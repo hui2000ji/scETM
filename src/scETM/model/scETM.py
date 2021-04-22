@@ -319,10 +319,10 @@ class scETM(BaseCellModel):
 
     def get_embeddings_and_nll(self,
         adata: anndata.AnnData,
-        batch_size: int,
-        emb_names: Union[str, Iterable[str], None],
-        batch_col: str,
-        inplace: bool
+        batch_size: int = 2000,
+        emb_names: Union[str, Iterable[str], None] = None,
+        batch_col: str = 'batch_indices',
+        inplace: bool = True
     ) -> Union[float, Tuple[Mapping[str, np.ndarray], float]]:
         """Calculates cell, gene, topic embeddings and nll for the dataset.
 
