@@ -113,6 +113,8 @@ if __name__ == '__main__':
     logger.info(f'Duration: {time_cost:.1f} s ({time_cost / 60:.1f} min)')
     logger.info(f'After model instantiation and training: {psutil.Process().memory_info()}')
 
+    if args.target_h5ad_path:
+        model.get_embeddings_and_nll(target_adata)
     result = evaluate(target_adata,
         resolutions = args.resolutions,
         plot_fname = f'{trainer.train_instance_name}_{trainer.model.clustering_input}_eval',
