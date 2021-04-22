@@ -56,6 +56,13 @@ if __name__ == '__main__':
         for col_name in args.color_by:
             assert col_name in adata.obs, f"{col_name} in args.color_by but not in adata.obs"
 
+    if args.target_h5ad_path:
+        target_adata = anndata.read_h5ad(args.target_h5ad_path)
+        assert adata.n_vars == target_adata.n_vars
+        args.target_dataset_str = Path(args.target_h5ad_path).stem
+    else:
+        target_adata = adata
+
     start_time = time()
     start_mem = psutil.Process().memory_info().rss
     logger.info(f'Before model instantiation and training: {psutil.Process().memory_info()}')
@@ -106,12 +113,17 @@ if __name__ == '__main__':
     logger.info(f'Duration: {time_cost:.1f} s ({time_cost / 60:.1f} min)')
     logger.info(f'After model instantiation and training: {psutil.Process().memory_info()}')
 
-    result = evaluate(adata,
+    result = evaluate(target_adata,
         resolutions = args.resolutions,
         plot_fname = f'{trainer.train_instance_name}_{trainer.model.clustering_input}_eval',
         plot_dir = trainer.ckpt_dir,
         color_by=args.color_by
     )
-    with open(os.path.join(args.ckpt_dir, 'table1.tsv'), 'a+') as f:
-        # dataset, model, seed, ari, nmi, ebm, k_bet, time_cost, mem_cost
-        f.write(f'{args.dataset_str}\tscETM\t{args.seed}\t{result["ari"]}\t{result["nmi"]}\t{result["ebm"]}\t{result["k_bet"]}\t{time_cost}\t{mem_cost}\n')
+    if args.target_h5ad_path:
+        with open(os.path.join(args.ckpt_dir, 'transfer.tsv'), 'a+') as f:
+            # dataset, tgt_dataset, model, seed, ari, nmi, ebm, k_bet, time_cost, mem_cost
+            f.write(f'{args.dataset_str}\t{args.target_dataset_str}\tscETM{args.log_str}\t{args.seed}\t{result["ari"]}\t{result["nmi"]}\t{result["ebm"]}\t{result["k_bet"]}\t{time_cost}\t{mem_cost}\n')
+    else:
+        with open(os.path.join(args.ckpt_dir, 'table1.tsv'), 'a+') as f:
+            # dataset, model, seed, ari, nmi, ebm, k_bet, time_cost, mem_cost
+            f.write(f'{args.dataset_str}\tscETM{args.log_str}\t{args.seed}\t{result["ari"]}\t{result["nmi"]}\t{result["ebm"]}\t{result["k_bet"]}\t{time_cost}\t{mem_cost}\n')

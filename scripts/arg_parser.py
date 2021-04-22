@@ -46,7 +46,9 @@ parser.add_argument('--no-model-ckpt', action='store_true', help='do not checkpo
 
 # Dataset location parameters
 parser.add_argument('--dataset-str', type=str, default='cortex', help='dataset name. Must be the key of available_datasets')
+parser.add_argument('--target-dataset-str', type=str, default='cortex', help='target dataset name. Must be the key of available_datasets')
 parser.add_argument('--h5ad-path', type=str, default='', help='path to the h5ad file representing an Anndata object')
+parser.add_argument('--target-h5ad-path', type=str, default='', help='path to the h5ad file representing the target Anndata object')
 parser.add_argument('--pathway-csv-path', type=str, default='', help='path to the csv file containing the gene x pathway matrix')
 
 # Embedding plotting parameters
