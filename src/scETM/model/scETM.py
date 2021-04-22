@@ -349,11 +349,11 @@ class scETM(BaseCellModel):
 
         result = super().get_cell_embeddings_and_nll(adata, batch_size=batch_size, emb_names=emb_names, batch_col=batch_col, inplace=inplace)
         if inplace:
-            adata.varm['rho'] = self.rho
+            adata.varm['rho'] = self.rho.T
             adata.uns['alpha'] = self.alpha
             return result
         else:
             result_dict, nll = result
-            result_dict['rho'] = self.rho
+            result_dict['rho'] = self.rho.T
             result_dict['alpha'] = self.alpha
             return result_dict, nll
