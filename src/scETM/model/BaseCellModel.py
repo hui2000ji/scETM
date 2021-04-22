@@ -1,9 +1,14 @@
 from typing import Any, Mapping, Sequence, Tuple, Union, Iterable
 import anndata
+import logging
 import numpy as np
 import torch
 from torch import nn, optim
 from scETM.batch_sampler import CellSampler
+
+
+_logger = logging.getLogger(__name__)
+
 
 class BaseCellModel(nn.Module):
     """Base class for single cell models.
@@ -112,7 +117,11 @@ class BaseCellModel(nn.Module):
         """
 
         assert adata.n_vars == self.n_fixed_genes + self.n_trainable_genes
-        assert not self.need_batch or adata.obs[batch_col].nunique() == self.n_batches
+        if self.need_batch and adata.obs[batch_col].nunique() != self.n_batches:
+            _logger.warning(
+                f'adata.obs[{batch_col}] contains {adata.obs[batch_col].nunique()} batches, '
+                f'while self.n_batches == {self.n_batches}'
+            )
         if emb_names is None:
             emb_names = self.emb_names
         self.eval()
