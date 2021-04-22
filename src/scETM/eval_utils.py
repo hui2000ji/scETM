@@ -39,6 +39,7 @@ def evaluate(adata: ad.AnnData,
     min_dist: float = 0.3,
     spread: float = 1,
     n_jobs: int = -1,
+    random_state: Union[None, int, np.random.RandomState, np.random.Generator] = 0,
 ) -> Mapping[str, Union[float, None, Figure]]:
     """Evaluates the clustering and batch correction performance of the given
     embeddings, and optionally plots the embeddings.
@@ -70,6 +71,7 @@ def evaluate(adata: ad.AnnData,
         spread: the spread argument in sc.tl.umap. Only used if draw is True.
         n_jobs: # jobs to generate. If <= 0, this is set to the number of
             physical cores.
+        random_state: random state for knn calculation.
 
     Returns:
         A dict storing the ari, nmi, ebm and k_bet of the cell embeddings with
@@ -83,7 +85,7 @@ def evaluate(adata: ad.AnnData,
         _logger.warning("scETM.evaluate assumes discrete batches. Converting batch_col to categorical.")
 
     # calculate neighbors
-    sc.pp.neighbors(adata, n_neighbors=n_neighbors, use_rep=embedding_key)
+    _get_knn_indices(adata, use_rep=embedding_key, n_neighbors=n_neighbors, random_state=random_state, calc_knn=True)
 
     # calculate clustering metrics
     if cell_type_col in adata.obs:
@@ -92,10 +94,23 @@ def evaluate(adata: ad.AnnData,
         cluster_key = best_ari = best_nmi = None
 
     # calculate batch correction metrics
-    if batch_col and adata.obs[batch_col].nunique() > 1:
-        ebm = calculate_entropy_batch_mixing(adata, use_rep=embedding_key, batch_col=batch_col, n_neighbors=n_neighbors, calc_knn=False, n_jobs=n_jobs)
+    need_batch = batch_col and adata.obs[batch_col].nunique() > 1
+    if need_batch:
+        ebm = calculate_entropy_batch_mixing(adata,
+            use_rep=embedding_key,
+            batch_col=batch_col,
+            n_neighbors=n_neighbors,
+            calc_knn=False,
+            n_jobs=n_jobs,
+        )
         _logger.info(f'{embedding_key}_BE: {ebm:7.4f}')
-        k_bet = calculate_kbet(adata, use_rep=embedding_key, batch_col=batch_col, n_neighbors=n_neighbors, calc_knn=False, n_jobs=n_jobs)[2]
+        k_bet = calculate_kbet(adata,
+            use_rep=embedding_key,
+            batch_col=batch_col,
+            n_neighbors=n_neighbors,
+            calc_knn=False,
+            n_jobs=n_jobs,
+        )[2]
         _logger.info(f'{embedding_key}_kBET: {k_bet:7.4f}')
     else:
         ebm = k_bet = None
@@ -103,7 +118,7 @@ def evaluate(adata: ad.AnnData,
     # plot UMAP embeddings
     if draw:
         if color_by is None:
-            color_by = [cell_type_col] if batch_col is None else [batch_col, cell_type_col]
+            color_by = [cell_type_col] if need_batch is None else [batch_col, cell_type_col]
         if cluster_key is not None:
             color_by = [cluster_key] + color_by
         fig = draw_embeddings(adata=adata, color_by=color_by, min_dist=min_dist, spread=spread,
@@ -123,97 +138,6 @@ def evaluate(adata: ad.AnnData,
 def _eff_n_jobs(n_jobs: int) -> int:
     """If n_jobs <= 0, set it as the number of physical cores _cpu_count"""
     return int(n_jobs) if n_jobs > 0 else _cpu_count
-
-
-def calculate_nearest_neighbors(
-    X: np.array,
-    n_neighbors: int = 100,
-    n_jobs: int = -1,
-    method: Union[str, None] = None,
-    M: int = 20,
-    efC: int = 200,
-    efS: int = 200,
-    random_state: int = 0,
-    full_speed: int = False,
-) -> Tuple[np.ndarray, np.ndarray]:
-    """Calculates the nearest neighbors graph for the given data.
-
-    Args:
-        X: the sample-by-feature matrix.
-        n_neighbors: # nearest neighbors to find.
-        n_jobs: # jobs to generate. If <= 0, this is set to the number of
-            physical cores.
-        method: method to calculate the NN graph. Must be "hnsw" or "sklearn".
-        M: maximum number of outgoing connections in the graph. Used only if
-            method is "hnsw".
-        efC: parameter that controls the index_time/index_accuracy. Bigger efC
-            leads to longer construction, but better index quality. At some
-            point, increasing efC does not improve the quality of the index.
-            Used only if method is "hnsw".
-        efS: the size of the dynamic list for the nearest neighbors (used
-            during the search). Higher efS leads to more accurate but slower
-            search. Can be anything between n_neighbors and #samples. Used only
-            if method is "hnsw".
-        random_state: random seed. Used only if method is "hnsw".
-        full_speed: If full_speed, use multiple threads in constructing hnsw
-            index. However, the kNN results are not reproducible. Used only if
-            method is "hnsw".
-
-    Returns:
-        indicies: indices of the (n_neighbors - 1)-nearest neighbors, stored as
-            a np.ndarray.
-        distances: distances of the (n_neighbors - 1)-nearest neighbors, stored
-            as a np.ndarray.
-    """
-
-    nsamples = X.shape[0]
-
-    if method is None:
-        if nsamples <= 1000:
-            method = "sklearn"
-        else:
-            method = "hnsw"
-
-    if nsamples < n_neighbors:
-        _logger.warning(f"Warning: in calculate_nearest_neighbors, number of samples = {nsamples} < n_neighbors = {n_neighbors}!\n Set n_neighbors to {nsamples}.")
-        n_neighbors = nsamples
-
-    n_jobs = _eff_n_jobs(n_jobs)
-
-    if method == "hnsw":
-        import hnswlib
-
-        if issparse(X):
-            X = X.toarray()
-        # Build hnsw index
-        knn_index = hnswlib.Index(space="l2", dim=X.shape[1])
-        knn_index.init_index(
-            max_elements=nsamples, ef_construction=efC, M=M, random_seed=random_state
-        )
-        knn_index.set_num_threads(n_jobs if full_speed else 1)
-        knn_index.add_items(X)
-
-        # KNN query
-        knn_index.set_ef(efS)
-        knn_index.set_num_threads(n_jobs)
-        indices, distances = knn_index.knn_query(X, k=n_neighbors)
-        # eliminate the first neighbor, which is the node itself
-        if not (indices[:, 0] == np.arange(nsamples)).all():
-            for i in range(nsamples):
-                if indices[i, 0] != i:
-                    indices[i, 1:] = indices[i, 0:-1]
-                    distances[i, 1:] = distances[i, 0:-1]
-        indices = indices[:, 1:].astype(int)
-        distances = np.sqrt(distances[:, 1:])
-    else:
-        assert method == "sklearn"
-        knn = NearestNeighbors(
-            n_neighbors=n_neighbors - 1, n_jobs=n_jobs
-        )  # eliminate the first neighbor, which is the node itself
-        knn.fit(X)
-        distances, indices = knn.kneighbors()
-
-    return indices, distances
 
 
 def _calculate_kbet_for_one_chunk(knn_indices, attr_values, ideal_dist, n_neighbors):
@@ -238,30 +162,32 @@ def _get_knn_indices(adata: ad.AnnData,
     use_rep: str = "delta",
     n_neighbors: int = 25,
     random_state: int = 0,
-    full_speed: bool = False,
-    n_jobs: int = -1,
     calc_knn: bool = True
 ) -> np.ndarray:
 
-    nsample = adata.n_obs
     if calc_knn:
         assert use_rep in adata.obsm, f'{use_rep} not in adata.obsm'
-        indices, distances = calculate_nearest_neighbors(
-            adata.obsm[use_rep],
-            n_neighbors=n_neighbors,
-            n_jobs=_eff_n_jobs(n_jobs),
-            random_state=random_state,
-            full_speed=full_speed,
-        )
+        neighbors = sc.Neighbors(adata)
+        neighbors.compute_neighbors(n_neighbors=n_neighbors, knn=True, use_rep=use_rep, random_state=random_state, write_knn_indices=True)
+        adata.obsp['distances'] = neighbors.distances
+        adata.obsp['connectivities'] = neighbors.connectivities
+        adata.obsm['knn_indices'] = neighbors.knn_indices
+        adata.uns['neighbors'] = {
+            'connectivities_key': 'connectivities',
+            'distances_key': 'distances',
+            'knn_indices_key': 'knn_indices',
+            'params': {
+                'n_neighbors': n_neighbors,
+                'use_rep': use_rep,
+                'metric': 'euclidean',
+                'method': 'umap'
+            }
+        }
     else:
         assert 'neighbors' in adata.uns, 'No precomputed knn exists.'
         assert adata.uns['neighbors']['params']['n_neighbors'] >= n_neighbors, f"pre-computed n_neighbors is {adata.uns['neighbors']['params']['n_neighbors']}, which is smaller than {n_neighbors}"
-        indices = adata.obsp['distances'].nonzero()[1].reshape(adata.n_obs, -1)
-        indices = indices[:, :n_neighbors - 1]
-    knn_indices = np.concatenate(
-        (np.arange(nsample).reshape(-1, 1), indices[:, :n_neighbors - 1]), axis=1
-    )  # add query as 1-nn
-    return knn_indices
+
+    return adata.obsm['knn_indices']
 
 
 def calculate_kbet(
@@ -271,7 +197,6 @@ def calculate_kbet(
     n_neighbors: int = 25,
     alpha: float = 0.05,
     random_state: int = 0,
-    full_speed: bool = False,
     n_jobs: int = -1,
     calc_knn: bool = True
 ) -> Tuple[float, float, float]:
@@ -288,9 +213,6 @@ def calculate_kbet(
         alpha: acceptance rate threshold. A cell is accepted if its kBET
             p-value is greater than or equal to alpha.
         random_state: random seed. Used only if method is "hnsw".
-        full_speed: If full_speed, use multiple threads in constructing hnsw
-            index. However, the kNN results are not reproducible. Used only if
-            method is "hnsw".
         n_jobs: # jobs to generate. If <= 0, this is set to the number of
             physical cores.
         calc_knn: whether to re-calculate the kNN graph or reuse the one stored
@@ -315,7 +237,7 @@ def calculate_kbet(
 
     attr_values = adata.obs[batch_col].values.copy()
     attr_values.categories = range(nbatch)
-    knn_indices = _get_knn_indices(adata, use_rep, n_neighbors, random_state, full_speed, n_jobs, calc_knn)
+    knn_indices = _get_knn_indices(adata, use_rep, n_neighbors, random_state, calc_knn)
 
     # partition into chunks
     n_jobs = min(_eff_n_jobs(n_jobs), nsample)
@@ -369,7 +291,6 @@ def calculate_entropy_batch_mixing(
     n_pools: int = 50,
     n_samples_per_pool: int = 100,
     random_state: int = 0,
-    full_speed: bool = False,
     n_jobs: int = -1,
     calc_knn: bool = True
 ) -> float:
@@ -386,9 +307,6 @@ def calculate_entropy_batch_mixing(
         n_pools: #pools of cells to calculate entropy of batch mixing.
         n_samples_per_pool: #cells per pool to calculate within-pool entropy.
         random_state: random seed. Used only if method is "hnsw".
-        full_speed: If full_speed, use multiple threads in constructing hnsw
-            index. However, the kNN results are not reproducible. Used only if
-            method is "hnsw".
         n_jobs: # jobs to generate. If <= 0, this is set to the number of
             physical cores.
         calc_knn: whether to re-calculate the kNN graph or reuse the one stored
@@ -401,7 +319,7 @@ def calculate_entropy_batch_mixing(
     _logger.info('Calculating batch mixing entropy...')
     nsample = adata.n_obs
 
-    knn_indices = _get_knn_indices(adata, use_rep, n_neighbors, random_state, full_speed, n_jobs, calc_knn)
+    knn_indices = _get_knn_indices(adata, use_rep, n_neighbors, random_state, calc_knn)
 
     from joblib import Parallel, delayed, parallel_backend
     with parallel_backend("loky", inner_max_num_threads=1):

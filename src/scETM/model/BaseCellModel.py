@@ -78,7 +78,7 @@ class BaseCellModel(nn.Module):
         optimizer.zero_grad()
         loss, _, new_record = self(data_dict, hyper_param_dict)
         loss.backward()
-        norms = torch.nn.utils.clip_grad_norm_(self.parameters(), 500)
+        norms = torch.nn.utils.clip_grad_norm_(self.parameters(), 50)
         new_record['max_norm'] = norms.cpu().numpy()
         optimizer.step()
         return new_record

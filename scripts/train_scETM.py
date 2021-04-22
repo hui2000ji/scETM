@@ -38,6 +38,7 @@ if __name__ == '__main__':
         raise ValueError("Must specify dataset through one of h5ad_path, anndata_path, dataset_str.")
 
     adata.obs_names_make_unique()
+    adata.obs['total_counts'] = adata.X.sum(1)
 
     if hasattr(args, 'pathway_csv_path') and args.pathway_csv_path:
         mat = pd.read_csv(args.pathway_csv_path, index_col=0)
@@ -97,7 +98,7 @@ if __name__ == '__main__':
         eval = not args.no_eval,
         record_log_path = os.path.join(trainer.ckpt_dir, 'record.tsv'),
         eval_result_log_path = os.path.join(args.ckpt_dir, 'result.tsv'),
-        eval_kwargs = dict(resolutions=args.resolutions)
+        eval_kwargs = dict(resolutions=args.resolutions, color_by=args.color_by)
     )
 
     time_cost = time() - start_time
@@ -108,7 +109,8 @@ if __name__ == '__main__':
     result = evaluate(adata,
         resolutions = args.resolutions,
         plot_fname = f'{trainer.train_instance_name}_{trainer.model.clustering_input}_eval',
-        plot_dir = trainer.ckpt_dir
+        plot_dir = trainer.ckpt_dir,
+        color_by=args.color_by
     )
     with open(os.path.join(args.ckpt_dir, 'table1.tsv'), 'a+') as f:
         # dataset, model, seed, ari, nmi, ebm, k_bet, time_cost, mem_cost
