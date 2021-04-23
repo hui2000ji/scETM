@@ -249,9 +249,9 @@ class UnsupervisedTrainer:
         
         # set up sampler and dataloader
         if n_samplers == 1 or self.batch_size >= self.train_adata.n_obs:
-            sampler = CellSampler(self.train_adata, self.batch_size, sample_batch_id = self.model.need_batch, n_epochs = n_epochs, batch_col = batch_col)
+            sampler = CellSampler(self.train_adata, self.batch_size, sample_batch_id = self.model.need_batch, n_epochs = n_epochs - self.epoch, batch_col = batch_col)
         else:
-            sampler = MultithreadedCellSampler(self.train_adata, self.batch_size, n_samplers = n_samplers, sample_batch_id = self.model.need_batch, n_epochs = n_epochs, batch_col = batch_col)
+            sampler = MultithreadedCellSampler(self.train_adata, self.batch_size, n_samplers = n_samplers, sample_batch_id = self.model.need_batch, n_epochs = n_epochs - self.epoch, batch_col = batch_col)
         dataloader = iter(sampler)
         
         # set up the stats recorder
