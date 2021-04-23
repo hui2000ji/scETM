@@ -114,6 +114,7 @@ if __name__ == '__main__':
     logger.info(f'After model instantiation and training: {psutil.Process().memory_info()}')
 
     if args.target_h5ad_path:
+        del adata
         model.get_embeddings_and_nll(target_adata)
     result = evaluate(target_adata,
         resolutions = args.resolutions,
