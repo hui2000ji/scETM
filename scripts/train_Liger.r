@@ -81,7 +81,7 @@ dataset <- scaleNotCenter(dataset)
 dataset <- optimizeALS(dataset, k = 20, lambda = 5)
 dataset <- quantile_norm(dataset, knn_k = 20)
 
-time_cost <- proc.time()[3] - start
+time_cost <- proc.time()[3] - start_time
 mem_cost <- print_memory_usage() - start_mem
 
 fpath <- file.path(ckpt_dir, sprintf("%s_Liger.h5ad", dataset_str))

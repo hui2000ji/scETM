@@ -113,7 +113,7 @@ integrated <- ScaleData(
     verbose = FALSE
 )
 
-time_cost <- proc.time()[3] - start
+time_cost <- proc.time()[3] - start_time
 mem_cost <- print_memory_usage() - start_mem
 
 fpath <- file.path(ckpt_dir, sprintf("%s_Seuratv3.h5seurat", dataset_str))
