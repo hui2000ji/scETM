@@ -6,8 +6,6 @@ library(SeuratDisk)
 library(SeuratWrappers)
 library(aricode)
 library(argparse)
-library(future)
-plan("multiprocess", workers = parallel::detectCores(logical = F))
 library(reticulate)
 reticulate::use_python("python")
 
