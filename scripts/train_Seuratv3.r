@@ -79,14 +79,6 @@ for (i in seq_along(batches)) {
         object = dataset_list[[i]],
         verbose = FALSE
     )
-    # if (args$subset_genes) {
-    #     dataset_list[[i]] <- FindVariableFeatures(
-    #         object = dataset_list[[i]],
-    #         selection.method = "vst",
-    #         nfeatures = args$subset_genes,
-    #         verbose = FALSE
-    #     )
-    # }
 }
 
 if (args$subset_genes) {
