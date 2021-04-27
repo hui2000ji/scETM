@@ -147,3 +147,25 @@ class BaseCellModel(nn.Module):
             return nll
         else:
             return embs, nll
+
+    def _get_batch_indices_oh(self, data_dict: Mapping[str, torch.Tensor]):
+        """Gets one-hot encodings of the batch indices.
+        Avoid repeated computations if possible.
+
+        Args:
+            data_dict: a dict containing the current minibatch for training.
+
+        Returns:
+            One-hot encodings of the batch indices of cells in the current
+            batch.
+        """
+
+        if 'batch_indices_oh' in data_dict:
+            w_batch_id = data_dict['batch_indices_oh']
+        else:
+            batch_indices = data_dict['batch_indices'].unsqueeze(1)
+            w_batch_id = torch.zeros((batch_indices.shape[0], self.n_batches), dtype=torch.float32, device=self.device)
+            w_batch_id.scatter_(1, batch_indices, 1.)
+            w_batch_id = w_batch_id[:, :self.n_batches - 1]
+            data_dict['batch_indices_oh'] = w_batch_id
+        return w_batch_id
