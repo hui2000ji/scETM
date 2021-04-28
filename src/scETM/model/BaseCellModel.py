@@ -133,7 +133,7 @@ class BaseCellModel(nn.Module):
         nll = 0.
         for data_dict in sampler:
             data_dict = {k: v.to(self.device) for k, v in data_dict.items()}
-            fwd_dict = self(data_dict, dict(val=True))
+            fwd_dict = self(data_dict)
             for name in emb_names:
                 embs[name].append(fwd_dict[name].detach().cpu())
             nll += fwd_dict['nll'].detach().item()

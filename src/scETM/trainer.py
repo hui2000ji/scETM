@@ -295,7 +295,7 @@ class UnsupervisedTrainer:
                     else:
                         test_nll = None
                     self.model.get_cell_embeddings_and_nll(self.adata, self.batch_size, batch_col=batch_col)
-                    result = evaluate(adata = self.adata, **current_eval_kwargs)
+                    result = evaluate(adata = self.adata, embedding_key = self.model.clustering_input, **current_eval_kwargs)
                     if eval_result_log_path is not None:
                         with open(eval_result_log_path, 'a+') as f:
                             # ckpt_dir, epoch, test_nll, ari, nmi, k_bet, ebm, time, seed

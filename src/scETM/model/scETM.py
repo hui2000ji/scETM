@@ -233,7 +233,7 @@ class scETM(BaseCellModel):
 
     def forward(self,
         data_dict: Mapping[str, torch.Tensor],
-        hyper_param_dict: Mapping[str, Any] = dict(val=True)
+        hyper_param_dict: Mapping[str, Any] = dict()
     ) -> Mapping[str, Any]:
         """scETM forward computation.
 
@@ -267,7 +267,7 @@ class scETM(BaseCellModel):
         delta = q_delta.rsample()
         theta = F.softmax(delta, dim=-1)  # [batch_size, n_topics]
 
-        if 'val' in hyper_param_dict:
+        if not self.training:
             theta = F.softmax(mu_q_delta, dim=-1)
             recon_log = self.decode(theta, data_dict.get('batch_indices', None))
             fwd_dict = dict(
