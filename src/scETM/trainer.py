@@ -86,7 +86,7 @@ class UnsupervisedTrainer:
         """
 
         if seed >= 0:
-            self._set_seed(seed)
+            set_seed(seed)
 
         self.model: BaseCellModel = model
 
@@ -140,21 +140,6 @@ class UnsupervisedTrainer:
         initialize_logger(self.ckpt_dir)
         _logger.info(f'ckpt_dir: {self.ckpt_dir}')
         self.update_step(restore_epoch * self.steps_per_epoch)
-
-    @staticmethod
-    def _set_seed(seed: int) -> None:
-        """Sets the random seed to seed.
-
-        Args:
-            seed: the random seed.
-        """
-
-        torch.manual_seed(seed)
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
-        random.seed(seed)
-        np.random.seed(seed)
-        _logger.info(f'Set seed to {seed}.')
 
     @staticmethod
     def _get_kl_weight(
@@ -498,3 +483,18 @@ def prepare_for_transfer(
     tgt_model = tgt_model.to(tgt_model.device)
 
     return tgt_model, tgt_dataset
+
+
+def set_seed(seed: int) -> None:
+    """Sets the random seed to seed.
+
+    Args:
+        seed: the random seed.
+    """
+
+    torch.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    random.seed(seed)
+    np.random.seed(seed)
+    _logger.info(f'Set seed to {seed}.')
