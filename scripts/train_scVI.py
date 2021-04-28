@@ -9,7 +9,7 @@ import psutil
 import matplotlib
 import argparse
 from arg_parser import add_plotting_arguments
-from scETM import initialize_logger, evaluate
+from scETM import initialize_logger, evaluate, set_seed
 
 logger = logging.getLogger(__name__)
 initialize_logger(logger=logger)
@@ -31,8 +31,12 @@ if __name__ == '__main__':
     parser.add_argument('--n-hidden', type=int, default=128, help='hidden layer size')
     parser.add_argument('--n-latent', type=int, default=10, help='latent variable size')
     parser.add_argument('--batch-size', type=int, default=2000, help='Batch size for training')
+    parser.add_argument('--seed', type=int, default=-1, help='random seed')
     add_plotting_arguments(parser)
     args = parser.parse_args()
+
+    if args.seed >= 0:
+        set_seed(args.seed)
         
     matplotlib.use('Agg')
     sc.settings.set_figure_params(
