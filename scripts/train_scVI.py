@@ -61,7 +61,7 @@ if __name__ == '__main__':
     if args.model.startswith('VAE'):
         model = VAE(
             dataset.nb_genes,
-            n_batch=adata.obs.batch_indices.nunique() if args.batch_removal else 0,
+            n_batch=adata.obs.batch_indices.nunique() if args.batch_removal and adata.obs.batch_indices.nunique() else 0,
             n_latent=args.n_latent,
             n_hidden=args.n_hidden,
             n_layers=args.n_layers,
@@ -70,7 +70,7 @@ if __name__ == '__main__':
     else:
         model = LDVAE(
             dataset.nb_genes,
-            n_batch=adata.obs.batch_indices.nunique() if args.batch_removal else 0,
+            n_batch=adata.obs.batch_indices.nunique() if args.batch_removal and adata.obs.batch_indices.nunique() else 0,
             n_latent=args.n_latent,
             n_hidden=args.n_hidden,
             n_layers_encoder=args.n_layers,
