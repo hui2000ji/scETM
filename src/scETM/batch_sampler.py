@@ -57,7 +57,7 @@ class CellSampler():
         self.is_sparse: bool = isinstance(adata.X, spmatrix)
         self.X: Union[np.ndarray, spmatrix] = adata.X
         if shuffle:
-            self.rng: Union[None, np.random.Generator] = rng
+            self.rng: Union[None, np.random.Generator] = rng or np.random.default_rng()
         else:
             self.rng: Union[None, np.random.Generator] = None
         self.shuffle: bool = shuffle
@@ -88,7 +88,7 @@ class CellSampler():
                     Is only returned if self.sample_batch_id is True.
         """
 
-        if self.batch_size <= self.n_cells:
+        if self.batch_size < self.n_cells:
             return self._low_batch_size()
         else:
             return self._high_batch_size()
