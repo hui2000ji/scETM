@@ -68,4 +68,4 @@ if __name__ == '__main__':
         result = evaluate(adata, embedding_key = "Scanorama", resolutions = args.resolutions, plot_dir = ckpt_dir)
         with open(os.path.join(args.ckpt_dir, 'table1.tsv'), 'a+') as f:
             # dataset, model, seed, ari, nmi, ebm, k_bet
-            f.write(f'{args.dataset_str}\tScanorama\t{args.seed}\t{result["ari"]}\t{result["nmi"]}\t{result["ebm"]}\t{result["k_bet"]}\t{time_cost}\t{mem_cost}\n', flush=True)
+            f.write(f'{dataset_name}\tScanorama\t{args.seed}\t{result["ari"]}\t{result["nmi"]}\t{result["ebm"]}\t{result["k_bet"]}\t{time_cost}\t{mem_cost}\n', flush=True)

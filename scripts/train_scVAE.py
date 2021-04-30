@@ -305,10 +305,10 @@ if __name__ == '__main__':
         dpi=args.dpi_show, dpi_save=args.dpi_save, facecolor='white', fontsize=args.fontsize, figsize=args.figsize)
 
     adata = anndata.read_h5ad(args.h5ad_path)
-    dataset_str = Path(args.h5ad_path).stem
+    dataset_name = Path(args.h5ad_path).stem
     if args.batch_removal:
-        dataset_str = dataset_str + '_batch'
-    ckpt_dir = os.path.join(args.ckpt_dir, dataset_str.lower())
+        dataset_name = dataset_name + '_batch'
+    ckpt_dir = os.path.join(args.ckpt_dir, dataset_name.lower())
     os.makedirs(ckpt_dir, exist_ok=True)
 
     if args.n_labels == -1:
@@ -319,8 +319,8 @@ if __name__ == '__main__':
     logger.info(f'Before model instantiation and training: {psutil.Process().memory_info()}')
 
     from scipy.sparse import csr_matrix
-    data_set = DataSet(dataset_str,
-        title=dataset_str,
+    data_set = DataSet(dataset_name,
+        title=dataset_name,
         specifications=dict(),
         values=csr_matrix(adata.X),
         labels=np.asarray_chkfinite(adata.obs.cell_types) if not args.no_eval else np.zeros_like(adata.obs.batch_indices),
@@ -363,4 +363,4 @@ if __name__ == '__main__':
         with open(os.path.join(args.ckpt_dir, 'table1.tsv'), 'a+') as f:
             model_name = "scVAEBatch" if args.batch_removal else "scVAE"
             # dataset, model, seed, ari, nmi, ebm, k_bet
-            f.write(f'{args.dataset_str}\t{model_name}\t{args.seed}\t{result["ari"]}\t{result["nmi"]}\t{result["ebm"]}\t{result["k_bet"]}\t{time_cost}\t{mem_cost}\n', flush=True)
+            f.write(f'{dataset_name}\t{model_name}\t{args.seed}\t{result["ari"]}\t{result["nmi"]}\t{result["ebm"]}\t{result["k_bet"]}\t{time_cost}\t{mem_cost}\n', flush=True)
