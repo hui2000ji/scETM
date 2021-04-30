@@ -8,6 +8,7 @@ parser.add_argument('--eval', action='store_true', help='eval mode')
 
 # Model parameters
 parser.add_argument('--model', type=str, default='scETM', help="model name")
+parser.add_argument('--device', type=str, default='cuda', help="device to hold the model")
 parser.add_argument('--hidden-sizes', type=int, nargs='+', default=(128,), help='Hidden sizes of the encoder')
 parser.add_argument('--dropout-prob', type=float, default=0.1, help='Dropout rate (1 - keep probability).')
 parser.add_argument('--trainable-gene-emb-dim', type=int, default=400, help='gene embedding dimensions')
