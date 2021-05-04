@@ -8,6 +8,9 @@ import anndata
 import psutil
 import matplotlib
 import argparse
+from scvi.dataset import AnnDatasetFromAnnData
+from scvi.models import VAE, LDVAE
+from scvi.inference import UnsupervisedTrainer, load_posterior
 from arg_parser import add_plotting_arguments
 from scETM import initialize_logger, evaluate, set_seed
 
@@ -52,10 +55,6 @@ if __name__ == '__main__':
         ckpt_dir = os.path.join(args.ckpt_dir, f"{dataset_name}_{args.model}_{strftime('%m_%d-%H_%M_%S')}")
         os.makedirs(ckpt_dir)
 
-
-    from scvi.dataset import AnnDatasetFromAnnData
-    from scvi.models import VAE, LDVAE
-    from scvi.inference import UnsupervisedTrainer, load_posterior
     start_time = time()
     start_mem = psutil.Process().memory_info().rss
     logger.info(f'Before model instantiation and training: {psutil.Process().memory_info()}')
