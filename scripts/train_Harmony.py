@@ -60,7 +60,7 @@ if __name__ == '__main__':
         sc.pp.scale(adata)
         data_mat = np.array(adata.X)
 
-    ho = hm.run_harmony(data_mat, metadata=adata.obs, vars_use=['batch_indices'], max_iter_harmony=100)
+    ho = hm.run_harmony(data_mat, meta_data=adata.obs, vars_use=['batch_indices'], max_iter_harmony=100)
 
     time_cost = time() - start_time
     mem_cost = psutil.Process().memory_info().rss - start_mem
