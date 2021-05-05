@@ -40,7 +40,7 @@ if __name__ == '__main__':
     adata = anndata.read_h5ad(args.h5ad_path)
     dataset_name = Path(args.h5ad_path).stem
     adata.obs_names_make_unique()
-    ckpt_dir = os.path.join(args.ckpt_dir, f'{dataset_name}_Scanorama_{strftime("%m_%d-%H_%M_%S")}')
+    ckpt_dir = os.path.join(args.ckpt_dir, f'{dataset_name}_Scanorama_seed{args.seed}_{strftime("%m_%d-%H_%M_%S")}')
     os.makedirs(ckpt_dir)
 
     adatas = []

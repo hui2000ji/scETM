@@ -54,7 +54,7 @@ if __name__ == '__main__':
     if args.batch_removal:
         args.model = args.model + 'batch'
     if not args.restore:
-        ckpt_dir = os.path.join(args.ckpt_dir, f"{dataset_name}_{args.model}_{strftime('%m_%d-%H_%M_%S')}")
+        ckpt_dir = os.path.join(args.ckpt_dir, f"{dataset_name}_{args.model}_seed{args.seed}_{strftime('%m_%d-%H_%M_%S')}")
         os.makedirs(ckpt_dir)
 
     start_time = time()

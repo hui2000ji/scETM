@@ -52,7 +52,7 @@ dataset <- LoadH5Seurat(args$h5seurat_path)
 batches <- names(table(dataset@meta.data$batch_indices))
 print(batches)
 
-ckpt_dir <- file.path(args$ckpt_dir, sprintf("%s_Seuratv3_%d_%s", dataset_str, args$subset_genes, strftime(Sys.time(),"%m_%d-%H_%M_%S")))
+ckpt_dir <- file.path(args$ckpt_dir, sprintf("%s_Seuratv3_%d_%s_seed%d", dataset_str, args$subset_genes, strftime(Sys.time(),"%m_%d-%H_%M_%S"), args$seed))
 if (!dir.exists((ckpt_dir))) {
     dir.create(ckpt_dir)
 }

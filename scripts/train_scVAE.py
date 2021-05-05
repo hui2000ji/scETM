@@ -33,6 +33,7 @@ from scvae.utilities import (
 
 from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score
 from time import time
+import logging
 
 logger = logging.getLogger(__name__)
 initialize_logger(logger=logger)
@@ -264,7 +265,6 @@ if __name__ == '__main__':
     import anndata
     import psutil
     import argparse
-    import logging
     from pathlib import Path
     import numpy as np
     from arg_parser import add_plotting_arguments
@@ -296,6 +296,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if args.seed >= 0:
+        if not args.run_id:
+            args.run_id = str(args.seed)
         random.seed(args.seed)
         np.random.seed(args.seed)
         tf.random.set_random_seed(args.seed)
