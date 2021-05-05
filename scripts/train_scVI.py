@@ -21,7 +21,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--h5ad-path', type=str, required=True, help='path to h5ad file')
     parser.add_argument('--lr', type=float, default=1e-3, help='learning rate of the model')
-    parser.add_argument('--batch-removal', action='store_true', help="whether to do batch correction")
+    parser.add_argument('--no-batch-removal', action='store_false', dest='batch_removal', help="whether to do batch correction")
     parser.add_argument('--ckpt-dir', type=str, help='path to checkpoint directory',
                         default=os.path.join('..', 'results'))
     parser.add_argument('--model', type=str, choices=('VAE', 'LDVAE'), default='LDVAE',
