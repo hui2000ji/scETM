@@ -8,15 +8,9 @@ library(reticulate)
 reticulate::use_python("python")
 
 print_memory_usage <- function() {
-    psutil <- import("psutil")
-    pmem <- psutil$Process()$memory_info()
-    for (name in names(pmem)) {
-        if (name == "count" || name == "index") {
-            next
-        }
-        writeLines(sprintf("%s\t%s", name, as.character(py_get_attr(pmem, name))))
-    }
-    return(pmem$rss)
+    library(reticulate)
+    py_run_string('import psutil; pmem = psutil.Process().memory_info(); print(pmem); rss_mb = pmem.rss/1024')
+    return(py$rss_mb)
 }
 
 parser <- ArgumentParser()
