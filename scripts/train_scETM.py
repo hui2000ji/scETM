@@ -57,13 +57,6 @@ if __name__ == '__main__':
         for col_name in args.color_by:
             assert col_name in adata.obs, f"{col_name} in args.color_by but not in adata.obs"
 
-    if args.target_h5ad_path:
-        target_adata = anndata.read_h5ad(args.target_h5ad_path)
-        assert adata.n_vars == target_adata.n_vars
-        args.target_dataset_str = Path(args.target_h5ad_path).stem
-    else:
-        target_adata = adata
-
     start_time = time()
     start_mem = psutil.Process().memory_info().rss
     logger.info(f'Before model instantiation and training: {psutil.Process().memory_info()}')
@@ -115,18 +108,24 @@ if __name__ == '__main__':
     logger.info(f'Duration: {time_cost:.1f} s ({time_cost / 60:.1f} min)')
     logger.info(f'After model instantiation and training: {psutil.Process().memory_info()}')
 
+    train_instance_name, clustering_input, ckpt_dir = trainer.train_instance_name, trainer.model.clustering_input, trainer.ckpt_dir
+
     if args.target_h5ad_path:
-        del adata
-        model.get_embeddings_and_nll(target_adata)
+        target_adata = anndata.read_h5ad(args.target_h5ad_path)
+        assert adata.n_vars == target_adata.n_vars
+        args.target_dataset_str = Path(args.target_h5ad_path).stem
+        del adata, trainer
+        torch.cuda.empty_cache()
+    else:
+        target_adata = adata
 
     if 'delta' not in target_adata.obsm:
         model.get_cell_embeddings_and_nll(target_adata)
         
-
     result = evaluate(target_adata,
         resolutions = args.resolutions,
-        plot_fname = f'{trainer.train_instance_name}_{trainer.model.clustering_input}_eval',
-        plot_dir = trainer.ckpt_dir,
+        plot_fname = f'{train_instance_name}_{clustering_input}_eval',
+        plot_dir = ckpt_dir,
         color_by=args.color_by
     )
     if args.target_h5ad_path:
