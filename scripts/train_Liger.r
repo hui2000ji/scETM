@@ -115,8 +115,8 @@ if (!args$no_eval) {
         plot_dir = ckpt_dir,
         n_jobs = 1L
     )
-    line <- sprintf("%s\tLiger\t%s\t%.4f\t%.4f\t%.5f\t%.5f\t%.2f\t%d\n",
-        dataset_str, args$seed,
+    line <- sprintf("%s\tLiger%s\t%s\t%.4f\t%.4f\t%.5f\t%.5f\t%.2f\t%d\n",
+        dataset_str, "Seurat" if (args$seurat) else "", args$seed,
         result$ari, result$nmi, result$ebm, result$k_bet,
         time_cost, mem_cost)
     write(line, file = file.path(args$ckpt_dir, "table1.tsv"), append = T)
