@@ -67,6 +67,7 @@ dataset <- ScaleData(dataset, features = rownames(dataset))
 
 time_cost <- proc.time()[3] - start_time
 mem_cost <- print_memory_usage() - start_mem
+writeLines(sprintf("Duration: %.1f s (%.1f min)", time_cost, time_cost / 60))
 
 fpath <- file.path(ckpt_dir, sprintf("%s_Seuratv2.h5seurat", dataset_str))
 SaveH5Seurat(dataset, file = fpath, overwrite = T)

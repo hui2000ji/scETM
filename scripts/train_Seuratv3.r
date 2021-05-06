@@ -101,6 +101,7 @@ integrated <- ScaleData(
 
 time_cost <- proc.time()[3] - start_time
 mem_cost <- print_memory_usage() - start_mem
+writeLines(sprintf("Duration: %.1f s (%.1f min)", time_cost, time_cost / 60))
 
 fpath <- file.path(ckpt_dir, sprintf("%s_Seuratv3.h5seurat", dataset_str))
 SaveH5Seurat(integrated, file = fpath, overwrite = T)
