@@ -9,3 +9,4 @@ build
 dist
 logs
 data
+scripts/**/*.ipynb
