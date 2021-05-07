@@ -116,7 +116,7 @@ if (!args$no_eval) {
         n_jobs = 1L
     )
     line <- sprintf("%s\tLiger%s\t%s\t%.4f\t%.4f\t%.5f\t%.5f\t%.2f\t%d\n",
-        dataset_str, if (args$seurat) "Seurat" else "", args$seed,
+        dataset_str, "Seurat" if (args$seurat) else "", args$seed,
         result$ari, result$nmi, result$ebm, result$k_bet,
         time_cost, mem_cost)
     write(line, file = file.path(args$ckpt_dir, "table1.tsv"), append = T)
