@@ -166,7 +166,7 @@ def _get_knn_indices(adata: ad.AnnData,
 ) -> np.ndarray:
 
     if calc_knn:
-        assert use_rep in adata.obsm, f'{use_rep} not in adata.obsm'
+        assert use_rep == 'X' or use_rep in adata.obsm, f'{use_rep} not in adata.obsm and is not "X"'
         neighbors = sc.Neighbors(adata)
         neighbors.compute_neighbors(n_neighbors=n_neighbors, knn=True, use_rep=use_rep, random_state=random_state, write_knn_indices=True)
         adata.obsp['distances'] = neighbors.distances
