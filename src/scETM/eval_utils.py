@@ -227,6 +227,7 @@ def calculate_kbet(
     _logger.info('Calculating kbet...')
     assert batch_col in adata.obs
     if adata.obs[batch_col].dtype.name != "category":
+        _logger.warning(f'Making the column {batch_col} of adata.obs categorical.')
         adata.obs[batch_col] = adata.obs[batch_col].astype('category')
 
     ideal_dist = (

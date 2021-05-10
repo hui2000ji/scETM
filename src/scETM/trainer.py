@@ -14,6 +14,7 @@ import anndata
 import torch
 from torch import nn
 from torch import optim
+from torch.utils.tensorboard import SummaryWriter
 
 from scETM.batch_sampler import CellSampler, MultithreadedCellSampler
 from scETM.eval_utils import evaluate
@@ -200,6 +201,7 @@ class UnsupervisedTrainer:
         batch_col: str = "batch_indices",
         save_model_ckpt: bool = True,
         record_log_path: Union[str, None] = None,
+        tensorboard_log_path: Union[str, None] = None,
         eval_result_log_path: Union[str, None] = None,
         eval_kwargs: Union[None, dict] = None
     ) -> None:
@@ -216,10 +218,12 @@ class UnsupervisedTrainer:
             eval: whether to evaluate the model.
             batch_col: a key in adata.obs to the batch column.
             save_model_ckpt: whether to save the model checkpoints.
-            record_log_path: path to log the training records. If None, do not
-                log.
-            eval_result_log_path: path to log the evaluation results. If None,
+            record_log_path: file path to log the training records. If None, do
+                not log.
+            tensorboard_log_path: directory path to tensorboard logs. If None,
                 do not log.
+            eval_result_log_path: file path to log the evaluation results. If
+                None, do not log.
             eval_kwargs: dict to pass to the evaluate function as kwargs.
         """
 
@@ -240,7 +244,7 @@ class UnsupervisedTrainer:
         dataloader = iter(sampler)
         
         # set up the stats recorder
-        recorder = _stats_recorder(record_log_path=record_log_path)
+        recorder = _stats_recorder(record_log_path=record_log_path, tensorboard_log_path=tensorboard_log_path)
         next_ckpt_epoch = int(np.ceil(self.epoch / eval_every) * eval_every)
 
         while self.epoch < n_epochs:
@@ -281,6 +285,12 @@ class UnsupervisedTrainer:
                     else:
                         test_nll = None
                     self.model.get_cell_embeddings_and_nll(self.adata, self.batch_size, batch_col=batch_col, emb_names=[self.model.clustering_input])
+                    recorder.log_embeddings(
+                        emb=self.adata.obsm[self.model.clustering_input],
+                        metadata=self.adata.obs[batch_col],
+                        global_step=next_ckpt_epoch,
+                        tag=self.model.clustering_input
+                    )
                     result = evaluate(adata = self.adata, embedding_key = self.model.clustering_input, **current_eval_kwargs)
                     if eval_result_log_path is not None:
                         with open(eval_result_log_path, 'a+') as f:
@@ -312,15 +322,13 @@ class UnsupervisedTrainer:
 class _stats_recorder:
     """A utility class for recording training statistics.
 
-    TODO: integrate with tensorboard.
-
     Attributes:
         record: the training statistics record.
         fmt: print format for the training statistics.
         log_file: the file stream to write logs to.
     """
 
-    def __init__(self, record_log_path: Union[str, None] = None, fmt: str = "12.4f") -> None:
+    def __init__(self, record_log_path: Union[str, None] = None, fmt: str = "12.4f", tensorboard_log_path: Union[str, None] = None) -> None:
         """Initializes the statistics recorder.
         
         Args:
@@ -330,11 +338,13 @@ class _stats_recorder:
 
         self.record: DefaultDict[List] = defaultdict(list)
         self.fmt: str = fmt
+        self.log_file: Union[None, IO] = None
+        self.writer: Union[None, SummaryWriter] = None
+        if tensorboard_log_path is not None:
+            self.writer = SummaryWriter(tensorboard_log_path)
         if record_log_path is not None:
-            self.log_file: Union[None, IO] = open(record_log_path, 'w')
+            self.log_file = open(record_log_path, 'w')
             self._header_logged: bool = False
-        else:
-            self.log_file = None
 
     def update(self, new_record: dict, epoch: float, total_epochs: int, next_ckpt_epoch: int) -> None:
         """Updates the record and prints a \\r-terminated line to the console.
@@ -359,6 +369,8 @@ class _stats_recorder:
         for key, val in new_record.items():
             print(f'{key}: {val:{self.fmt}}', end='\t')
             self.record[key].append(val)
+            if self.writer is not None:
+                self.writer.add_scalar(key, val, epoch)
         print(f'Epoch {int(epoch):5d}/{total_epochs:5d}\tNext ckpt: {next_ckpt_epoch:7d}', end='\r', flush=True)
 
     def log_and_clear_record(self) -> None:
@@ -367,6 +379,11 @@ class _stats_recorder:
         for key, val in self.record.items():
             _logger.info(f'{key:12s}: {np.mean(val):{self.fmt}}')
         self.record = defaultdict(list)
+
+    def log_embeddings(self, emb: np.ndarray, metadata: pd.Series, global_step: int, tag: str) -> None:
+        if self.writer is None:
+            return
+        self.writer.add_embedding(emb=emb, metadata=metadata, global_step=global_step, tag=tag)
 
     def __del__(self) -> None:
         if self.log_file is not None:

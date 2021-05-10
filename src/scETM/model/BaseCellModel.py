@@ -143,8 +143,7 @@ class BaseCellModel(nn.Module):
                 nll += fwd_dict['nll'].detach().item()
         embs = {name: torch.cat(embs[name], dim=0).numpy() for name in emb_names}
         if inplace:
-            for emb_name, emb in embs.items():
-                adata.obsm[emb_name] = emb
+            adata.obsm.update(embs)
         if nll is not None:
             nll /= adata.n_obs
 

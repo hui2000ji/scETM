@@ -239,7 +239,7 @@ class MultithreadedCellSampler:
     This class should be only used in training and when the #cells in the
     dataset is larger than the batch size. In other cases, using CellSampler
     would suffice.
-    Note that shuffle is fixed to True.
+    Note that the shuffle parameter is fixed to True.
 
     Attributes
         n_samplers: #ThreadedCellSamplers (#threads) in the pool.
