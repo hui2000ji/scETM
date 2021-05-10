@@ -73,6 +73,7 @@ if __name__ == '__main__':
         norm_cells = args.norm_cells,
         normed_loss = args.normed_loss,
         enable_batch_bias = args.batch_bias,
+        rho_fixed_emb=adata.varm['gene_emb'].T,
         device = torch.device(args.device)
     )
 
