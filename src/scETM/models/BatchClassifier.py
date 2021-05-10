@@ -1,4 +1,5 @@
 from typing import Sequence, Mapping
+from numpy import mod
 import torch
 from torch import nn
 from torch import optim
@@ -42,11 +43,11 @@ class BatchClassifier(nn.Module):
 
         logit = self.batch_clf(X)
         if not self.training:
-            model_loss = (-F.log_softmax(logit, dim=-1) * torch.zeros_like(y).fill_(1/self.n_output).unsqueeze_(-1)).sum(-1).mean()
-            return dict(logit=logit, model_loss=model_loss)
+            return dict(logit=logit)
 
+        model_loss = (-F.log_softmax(logit, dim=-1) * torch.zeros_like(y).fill_(1/self.n_output).unsqueeze_(-1)).sum(-1).mean()
         clf_loss = F.cross_entropy(logit, y)
-        return clf_loss, dict(logit=logit), dict(clf_loss=clf_loss)
+        return clf_loss, dict(logit=logit, model_loss=model_loss), dict(clf_loss=clf_loss.detach().item())
 
     def train_step(self,
         optimizer: optim.Optimizer,

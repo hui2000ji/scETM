@@ -144,12 +144,13 @@ class BatchAdversarialTrainer(UnsupervisedTrainer):
         data_dict = {k: v.to(self.device) for k, v in next(dataloader).items()}
 
         # train for one step, record tracked items (e.g. loss)
+        self.model.train()
+        self.batch_clf.train()
         for _ in range(kwargs['g_steps']):
-            self.model.train()
-            self.batch_clf.eval()
             if hyper_param_dict['clf_weight'] > 0.:
                 def loss_update_callback(loss, fwd_dict, new_record):
-                    model_loss = self.batch_clf(fwd_dict[self.model.clustering_input], data_dict['batch_indices'])['model_loss']
+                    _, fwd_dict, _ = self.batch_clf(fwd_dict[self.model.clustering_input], data_dict['batch_indices'])
+                    model_loss = fwd_dict['model_loss']
                     loss += model_loss * hyper_param_dict['clf_weight']
                     new_record['model_loss'] = model_loss.detach().item()
                     return loss, new_record
@@ -158,8 +159,6 @@ class BatchAdversarialTrainer(UnsupervisedTrainer):
             new_record = self.model.train_step(self.optimizer, data_dict, hyper_param_dict, loss_update_callback)
 
         if hyper_param_dict['clf_weight'] > 0.:
-            self.batch_clf.train()
-            self.model.eval()
             fwd_dict = self.model(data_dict, hyper_param_dict)
             emb = fwd_dict[self.model.clustering_input].detach()
             for _ in range(kwargs['d_steps']):

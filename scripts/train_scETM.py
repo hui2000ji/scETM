@@ -156,9 +156,8 @@ if __name__ == '__main__':
         resolutions = args.resolutions,
         plot_fname = f'{train_instance_name}_{clustering_input}_eval',
         plot_dir = ckpt_dir,
-        tensorboard_dir = os.path.join(ckpt_dir, 'tensorboard'),
-        color_by=args.color_by,
-        writer = writer
+        writer = writer,
+        color_by=args.color_by
     )
     if args.target_h5ad_path:
         with open(os.path.join(args.ckpt_dir, 'transfer.tsv'), 'a+') as f:
