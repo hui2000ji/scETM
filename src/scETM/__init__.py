@@ -13,8 +13,8 @@ https://www.github.com/hui2000ji/scETM.
 """
 
 from scETM.logging_utils import initialize_logger
-from scETM.model import scETM
-from scETM.trainer import UnsupervisedTrainer, prepare_for_transfer, train_test_split, set_seed
+from scETM.models import scETM
+from scETM.trainers import UnsupervisedTrainer, BatchAdversarialTrainer, prepare_for_transfer, train_test_split, set_seed
 from scETM.eval_utils import evaluate, calculate_entropy_batch_mixing, calculate_kbet, clustering, draw_embeddings
 
 initialize_logger()

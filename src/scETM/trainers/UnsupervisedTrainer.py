@@ -1,26 +1,22 @@
 import os
-import copy
 from pathlib import Path
 from matplotlib.figure import Figure
-import pandas as pd
 import time
-import random
-from typing import DefaultDict, IO, List, Mapping, Sequence, Union, Tuple
+from typing import Mapping, Union
 import psutil
 import logging
-from collections import defaultdict
 
 import numpy as np
 import anndata
 import torch
-from torch import nn
 from torch import optim
 from torch.utils.tensorboard import SummaryWriter
 
 from scETM.batch_sampler import CellSampler, MultithreadedCellSampler
 from scETM.eval_utils import evaluate
-from scETM.model import BaseCellModel, scETM
+from scETM.models import BaseCellModel, scETM
 from scETM.logging_utils import initialize_logger, log_arguments
+from .trainer_utils import train_test_split, set_seed, _stats_recorder
 
 _logger = logging.getLogger(__name__)
 
@@ -32,6 +28,8 @@ class UnsupervisedTrainer:
     training and evaluation loop.
 
     Attributes:
+        attr_fname: a dict mapping attributes of the trainer (a model or an
+            optimizer) to file name prefixes of checkpoints.
         model: the model to be trained.
         adata: the intact single-cell dataset.
         train_adata: the training data. Contains (1 - test_ratio) × 100% of
@@ -51,6 +49,11 @@ class UnsupervisedTrainer:
         train_instance_name: name for this train instance for checkpointing.
         ckpt_dir: directory to store the logs, the checkpoints and the plots.
     """
+
+    attr_fname: Mapping(str, str) = dict(
+        model = 'model',
+        optimizer = 'opt'
+    )
 
     @log_arguments
     def __init__(self,
@@ -133,41 +136,47 @@ class UnsupervisedTrainer:
         if ckpt_dir is None:
             ckpt_dir = self.ckpt_dir
         assert ckpt_dir is not None and os.path.exists(ckpt_dir), f"ckpt_dir {ckpt_dir} does not exist."
-        model_ckpt_path = os.path.join(ckpt_dir, f'model-{restore_epoch}')
-        self.model.load_state_dict(torch.load(model_ckpt_path))
-        _logger.info(f'Parameters restored from {model_ckpt_path}.')
-        optim_ckpt_path = os.path.join(ckpt_dir, f'opt-{restore_epoch}')
-        self.optimizer.load_state_dict(torch.load(optim_ckpt_path))
-        _logger.info(f'Optimizer restored from {optim_ckpt_path}.')
+        for attr, fname in self.attr_fname.items():
+            fpath = os.path.join(ckpt_dir, f'{fname}-{restore_epoch}')
+            getattr(self, attr).load_state_dict(torch.load(fpath))
+        _logger.info(f'Parameters and optimizers restored from {ckpt_dir}.')
         initialize_logger(self.ckpt_dir)
         _logger.info(f'ckpt_dir: {self.ckpt_dir}')
         self.update_step(restore_epoch * self.steps_per_epoch)
 
     @staticmethod
-    def _get_kl_weight(
+    def _calc_weight(
         epoch: int,
         n_epochs: int,
-        kl_warmup_ratio: float = 1/3,
-        min_kl_weight: float = 0.,
-        max_kl_weight: float = 1e-7
+        cutoff_ratio: float = 0.,
+        warmup_ratio: float = 1/3,
+        min_weight: float = 0.,
+        max_weight: float = 1e-7
     ) -> float:
-        """Calculates weight of the KL term.
+        """Calculates weights.
 
         Args:
             epoch: current epoch.
             n_epochs: the total number of epochs to train the model.
-            kl_warmup_ratio: ratio of KL warmup epochs and n_epochs.
-            min_kl_weight: minimum weight of the KL term.
-            max_kl_weight: maximum weight of the KL term.
+            cutoff_ratio: ratio of cutoff epochs (set weight to zero) and
+                n_epochs.
+            warmup_ratio: ratio of warmup epochs and n_epochs.
+            min_weight: minimum weight.
+            max_weight: maximum weight.
 
         Returns:
             The current weight of the KL term.
         """
 
-        if kl_warmup_ratio:
-            return max(min(1., epoch / (n_epochs * kl_warmup_ratio)) * max_kl_weight, min_kl_weight)
+        fully_warmup_epoch = n_epochs * warmup_ratio
+        if cutoff_ratio > warmup_ratio:
+            _logger.warning(f'Cutoff_ratio {cutoff_ratio} is bigger than warmup_ratio {warmup_ratio}. This may not be an expected behavior.')
+        if epoch < n_epochs * cutoff_ratio:
+            return 0.
+        if warmup_ratio:
+            return max(min(1., epoch / fully_warmup_epoch) * max_weight, min_weight)
         else:
-            return max_kl_weight
+            return max_weight
 
     def update_step(self, jump_to_step: Union[None, int] = None) -> None:
         """Aligns the current step, epoch and lr to the given step number.
@@ -204,7 +213,8 @@ class UnsupervisedTrainer:
         record_log_path: Union[str, None] = None,
         writer: Union[None, SummaryWriter] = None,
         eval_result_log_path: Union[str, None] = None,
-        eval_kwargs: Union[None, dict] = None
+        eval_kwargs: Union[None, dict] = None,
+        **train_kwargs
     ) -> None:
         """Trains the model, optionally evaluates performance and logs results.
 
@@ -224,7 +234,8 @@ class UnsupervisedTrainer:
             writer: an initialized SummaryWriter for tensorboard logging.
             eval_result_log_path: file path to log the evaluation results. If
                 None, do not log.
-            eval_kwargs: dict to pass to the evaluate function as kwargs.
+            eval_kwargs: kwargs to pass to the evaluate function.
+            train_kwargs: kwargs to pass to self.do_train_step().
         """
 
         default_eval_kwargs = dict(
@@ -249,16 +260,13 @@ class UnsupervisedTrainer:
         next_ckpt_epoch = int(np.ceil(self.epoch / eval_every) * eval_every)
 
         while self.epoch < n_epochs:
-            # construct hyper_param_dict
-            hyper_param_dict = {
-                'beta': self._get_kl_weight(self.epoch, n_epochs, kl_warmup_ratio, min_kl_weight, max_kl_weight)
-            }
-
-            # construct data_dict
-            data_dict = {k: v.to(self.device) for k, v in next(dataloader).items()}
-
-            # train for one step, record tracked items (e.g. loss)
-            new_record = self.model.train_step(self.optimizer, data_dict, hyper_param_dict)
+            new_record = self.do_train_step(dataloader,
+                n_epochs = n_epochs,
+                kl_warmup_ratio = kl_warmup_ratio,
+                min_kl_weight = min_kl_weight,
+                max_kl_weight = max_kl_weight,
+                **train_kwargs
+            )
             recorder.update(new_record, self.epoch, n_epochs, next_ckpt_epoch)
             self.update_step()
 
@@ -271,7 +279,7 @@ class UnsupervisedTrainer:
                 # log current lr and kl_weight
                 if self.lr_decay:
                     _logger.info(f'{"lr":12s}: {self.lr}')
-                _logger.info(f'{"kl_weight":12s}: {self._get_kl_weight(next_ckpt_epoch, n_epochs):12.4f}')
+                _logger.info(f'{"kl_weight":12s}: {self._calc_weight(next_ckpt_epoch, n_epochs, kl_warmup_ratio, min_kl_weight, max_kl_weight):12.4f}')
 
                 # log statistics of tracked items
                 recorder.log_and_clear_record()
@@ -286,7 +294,7 @@ class UnsupervisedTrainer:
                     # get embeddings, evaluate and log results
                     current_eval_kwargs = eval_kwargs.copy()
                     current_eval_kwargs['plot_fname'] = current_eval_kwargs['plot_fname'] + f'_epoch{int(next_ckpt_epoch)}'
-                    self.model.get_cell_embeddings_and_nll(self.adata, self.batch_size, batch_col=batch_col, emb_names=[self.model.clustering_input])
+                    self.before_eval(batch_col=batch_col)
                     if isinstance(self.model, scETM):
                         self.model.write_topic_gene_embeddings_to_tensorboard(writer, self.adata.var_names, f'gene_topic_emb_epoch{int(next_ckpt_epoch)}')
                     result = evaluate(adata = self.adata, embedding_key = self.model.clustering_input, **current_eval_kwargs)
@@ -295,8 +303,7 @@ class UnsupervisedTrainer:
 
                 if next_ckpt_epoch and save_model_ckpt and self.ckpt_dir is not None:
                     # checkpointing
-                    torch.save(self.model.state_dict(), os.path.join(self.ckpt_dir, f'model-{next_ckpt_epoch}'))
-                    torch.save(self.optimizer.state_dict(), os.path.join(self.ckpt_dir, f'opt-{next_ckpt_epoch}'))
+                    self.save_model_and_optimizer(next_ckpt_epoch)
 
                 _logger.info('=' * 10 + f'End of evaluation' + '=' * 10)
                 next_ckpt_epoch += eval_every
@@ -306,12 +313,21 @@ class UnsupervisedTrainer:
         if isinstance(sampler, MultithreadedCellSampler):
             sampler.join(0.1)
 
+    def save_model_and_optimizer(self, next_ckpt_epoch: int) -> None:
+        """Docstring (TODO)
+        """
+
+        for attr, fname in self.attr_fname.items():
+            torch.save(getattr(self, attr).state_dict(), os.path.join(self.ckpt_dir, f'{fname}-{next_ckpt_epoch}'))
+
     def _log_eval_result(self,
         result: Mapping[str, Union[float, None, Figure]],
         next_ckpt_epoch: int,
         writer: Union[None, SummaryWriter],
         eval_result_log_path: Union[str, None] = None
     ) -> None:
+        """Docstring (TODO)
+        """
         if writer is not None:
             for k, v in result:
                 if isinstance(v, float):
@@ -329,204 +345,26 @@ class UnsupervisedTrainer:
                         f'{time.strftime("%m_%d-%H_%M_%S")}\t'
                         f'{self.seed}\n')
 
-
-class _stats_recorder:
-    """A utility class for recording training statistics.
-
-    Attributes:
-        record: the training statistics record.
-        fmt: print format for the training statistics.
-        log_file: the file stream to write logs to.
-        writer: an initialized SummaryWriter for tensorboard logging.
-    """
-
-    def __init__(self,
-        record_log_path: Union[str, None] = None,
-        fmt: str = "12.4f",
-        writer: Union[None, SummaryWriter] = None,
-        metadata: Union[None, pd.DataFrame] = None
-    ) -> None:
-        """Initializes the statistics recorder.
-        
-        Args:
-            record_log_path: the file path to write logs to.
-            fmt: print format for the training statistics.
-            tensorboard_dir: directory path to tensorboard logs. If None, do
-                not log.
+    def do_train_step(self, dataloader, **kwargs) -> Mapping[str, torch.Tensor]:
+        """Docstring (TODO)
         """
 
-        self.record: DefaultDict[List] = defaultdict(list)
-        self.fmt: str = fmt
-        self.log_file: Union[None, IO] = None
-        self.writer: Union[None, SummaryWriter] = writer
-        if writer is not None:
-            metadata.to_csv(os.path.join(writer.get_logdir(), 'metadata.tsv'), sep='\t')
-        if record_log_path is not None:
-            self.log_file = open(record_log_path, 'w')
-            self._header_logged: bool = False
+        # construct hyper_param_dict
+        hyper_param_dict = {
+            'kl_weight': self._calc_weight(self.epoch, kwargs['n_epochs'], 0, kwargs['kl_warmup_ratio'], kwargs['min_kl_weight'], kwargs['max_kl_weight'])
+        }
 
-    def update(self, new_record: dict, epoch: float, total_epochs: int, next_ckpt_epoch: int) -> None:
-        """Updates the record and prints a \\r-terminated line to the console.
+        # construct data_dict
+        data_dict = {k: v.to(self.device) for k, v in next(dataloader).items()}
 
-        If self.log_file is not None, this function will also write a line of
-        log to self.log_file.
+        # train for one step, record tracked items (e.g. loss)
+        new_record = self.model.train_step(self.optimizer, data_dict, hyper_param_dict)
 
-        Args:
-            new_record: the latest training statistics to be added to
-                self.record.
-            epoch: current epoch.
-            total_epochs: total #epochs. Used for printing only.
-            next_ckpt_epoch: Next epoch for evaluation and checkpointing. Used
-                for printing only.
+        return new_record
+
+    def before_eval(self, batch_col: str, **kwargs) -> None:
+        """Docstring (TODO)
         """
 
-        if self.log_file is not None:
-            if not self._header_logged:
-                self._header_logged = True
-                self.log_file.write('epoch\t' + '\t'.join(new_record.keys()) + '\n')
-            self.log_file.write(f'{epoch}\t' + '\t'.join(map(str, new_record.values())) + '\n')
-        for key, val in new_record.items():
-            print(f'{key}: {val:{self.fmt}}', end='\t')
-            self.record[key].append(val)
-            if self.writer is not None:
-                self.writer.add_scalar(key, val, epoch)
-        print(f'Epoch {int(epoch):5d}/{total_epochs:5d}\tNext ckpt: {next_ckpt_epoch:7d}', end='\r', flush=True)
+        self.model.get_cell_embeddings_and_nll(self.adata, self.batch_size, batch_col=batch_col, emb_names=[self.model.clustering_input])
 
-    def log_and_clear_record(self) -> None:
-        """Logs record to logger and reset self.record."""
-
-        for key, val in self.record.items():
-            _logger.info(f'{key:12s}: {np.mean(val):{self.fmt}}')
-        self.record = defaultdict(list)
-
-    def __del__(self) -> None:
-        if self.log_file is not None:
-            self.log_file.close()
-
-
-def train_test_split(
-    adata: anndata.AnnData,
-    test_ratio: float = 0.1,
-    seed: int = 1
-) -> Tuple[anndata.AnnData, anndata.AnnData]:
-    """Splits the adata into a training set and a test set.
-
-    Args:
-        adata: the dataset to be splitted.
-        test_ratio: ratio of the test data in adata.
-        seed: random seed.
-
-    Returns:
-        the training set and the test set, both in AnnData format.
-    """
-
-    rng = np.random.default_rng(seed=seed)
-    test_indices = rng.choice(adata.n_obs, size=int(test_ratio * adata.n_obs), replace=False)
-    train_indices = list(set(range(adata.n_obs)).difference(test_indices))
-    train_adata = adata[adata.obs_names[train_indices], :]
-    test_adata = adata[adata.obs_names[test_indices], :]
-    _logger.info(f'Keeping {test_adata.n_obs} cells ({test_ratio:g}) as test data.')
-    return train_adata, test_adata
-
-
-@log_arguments
-def prepare_for_transfer(
-    model: scETM,
-    tgt_dataset: anndata.AnnData,
-    aligned_src_genes: Sequence[str],
-    keep_tgt_unique_genes: bool = False,
-    fix_shared_genes: bool = False,
-    batch_col: Union[str, None] = "batch_indices"
-) -> Tuple[scETM, anndata.AnnData]:
-    """Prepares the model (trained on the source dataset) and target dataset
-    for transfer learning.
-
-    The source and target datasets need to have shared genes for knowledge
-    transfer to be possible.
-
-    Args:
-        model: an scETM model trained on the source dataset.
-        tgt_dataset: the target dataset.
-        aligned_src_genes: a list of source genes aligned to tgt_dataset. For
-            example, if the source dataset is from mouse and the target from
-            human, the caller should convert the mouse genes to the homologous
-            human genes before passing the gene list here.
-        keep_tgt_unique_genes: whether to keep target genes not found in the
-            source dataset. If False, filter out all target-unique genes.
-        fix_shared_genes: whether to fix the parameters of the input/output
-            layer related to the shared genes.
-        batch_col: a key in tgt_dataset.obs to the batch column.
-    
-    Returns:
-        The transfered model and the prepared target dataset.
-    """
-
-    assert pd.Series(aligned_src_genes).is_unique, 'aligned_src_genes is not unique'
-    assert tgt_dataset.var_names.is_unique, 'tgt_dataset.var_names is not unique'
-    assert batch_col is None or batch_col in tgt_dataset.obs, f'{batch_col} not in tgt_dataset.obs'
-
-    tgt_genes = tgt_dataset.var_names
-    shared_genes = set(aligned_src_genes).intersection(tgt_genes)
-    src_shared_indices = [i for i, gene in enumerate(aligned_src_genes) if gene in shared_genes]
-    shared_genes = list(shared_genes)
-
-    if not keep_tgt_unique_genes:
-        tgt_dataset = tgt_dataset[:, shared_genes]
-    else:
-        tgt_indices = shared_genes + [gene for gene in tgt_genes if gene not in shared_genes]
-        tgt_dataset = tgt_dataset[:, tgt_indices]
-    if fix_shared_genes:
-        n_fixed_genes = len(shared_genes)
-    else:
-        n_fixed_genes = 0
-    tgt_model = copy.deepcopy(model)
-    tgt_model.n_fixed_genes = n_fixed_genes
-    tgt_model.n_trainable_genes = tgt_dataset.n_vars - n_fixed_genes
-    tgt_model.n_batches = tgt_dataset.obs[batch_col].nunique() if batch_col is not None else 1
-
-    # initialize rho_trainable_emb, batch and global bias
-    tgt_model._init_encoder_first_layer()
-    tgt_model._init_rho_trainable_emb()
-    tgt_model._init_batch_and_global_biases()
-
-    with torch.no_grad():
-        rho_trainable_emb = model.rho_trainable_emb.get_param()
-        if tgt_model.n_fixed_genes > 0:
-            # initialize first layer
-            tgt_model.q_delta[0].fixed.weight = nn.Parameter(model.q_delta[0].weight[:, src_shared_indices].detach())
-
-            # model has trainable emb dim > 0 (shape of rho: [L_t, G])
-            if tgt_model.trainable_gene_emb_dim > 0:
-                # fix embeddings of shared genes: [L_t, G_s]
-                tgt_model.rho_trainable_emb.fixed = rho_trainable_emb[:, src_shared_indices].detach().to(tgt_model.device)
-        else:
-            # initialize first layer
-            tgt_model.q_delta[0].weight[:, :len(shared_genes)] = model.q_delta[0].weight[:, src_shared_indices].detach()
-
-            # model has trainable emb dim > 0 (shape of rho: [L_t, G])
-            if tgt_model.trainable_gene_emb_dim > 0:
-                tgt_model.rho_trainable_emb.trainable[:, :len(shared_genes)] = rho_trainable_emb[:, src_shared_indices].detach()
-            
-        # model has fixed emb dim > 0 (shape of rho: [L_f, G])
-        if model.rho_fixed_emb is not None:
-            tgt_model.rho_fixed_emb = torch.zeros((model.rho_fixed_emb.size(0), tgt_dataset.n_vars), dtype=torch.float, device=tgt_model.device)
-            tgt_model.rho_fixed_emb[:, :len(shared_genes)] = model.rho_fixed_emb[:, src_shared_indices].detach()  # [L_f, G_s]
-
-    tgt_model = tgt_model.to(tgt_model.device)
-
-    return tgt_model, tgt_dataset
-
-
-def set_seed(seed: int) -> None:
-    """Sets the random seed to seed.
-
-    Args:
-        seed: the random seed.
-    """
-
-    torch.manual_seed(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-    random.seed(seed)
-    np.random.seed(seed)
-    _logger.info(f'Set seed to {seed}.')

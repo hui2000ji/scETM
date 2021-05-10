@@ -5,6 +5,7 @@ import anndata
 import numpy as np
 import pandas as pd
 import torch
+import torch.sparse
 from scipy.sparse import spmatrix
 
 
@@ -141,8 +142,10 @@ class CellSampler():
             library_size = torch.FloatTensor(self.library_size[batch])
             X = self.X[batch, :]
             if self.is_sparse:
-                X = X.todense()
-            cells = torch.FloatTensor(X)
+                X = X.tocoo()
+                cells = torch.sparse.FloatTensor(torch.LongTensor([X.row, X.col], torch.FloatTensor(X.data), X.shape))
+            else:
+                cells = torch.FloatTensor(X)
             cell_indices = torch.LongTensor(batch)
             result_dict = dict(cells=cells, library_size=library_size, cell_indices=cell_indices)
             if self.sample_batch_id:

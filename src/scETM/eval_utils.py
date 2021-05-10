@@ -125,6 +125,8 @@ def evaluate(adata: ad.AnnData,
             color_by = [batch_col, cell_type_col] if need_batch else [cell_type_col]
         if cluster_key is not None:
             color_by = [cluster_key] + color_by
+        if 'clf_pred' in adata.obs:
+            color_by = ['clf_pred', 'clf_correct']
         fig = draw_embeddings(adata=adata, color_by=color_by, min_dist=min_dist, spread=spread,
             ckpt_dir=plot_dir, fname=f'{plot_fname}.{plot_ftype}', return_fig=return_fig)
         if writer is not None:

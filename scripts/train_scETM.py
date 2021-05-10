@@ -13,6 +13,8 @@ from pathlib import Path
 from scETM import scETM, UnsupervisedTrainer, initialize_logger, evaluate
 import matplotlib
 
+from scETM.trainers.BatchAdversarialTrainer import BatchAdversarialTrainer
+
 logger = logging.getLogger(__name__)
 initialize_logger(logger=logger)
 
@@ -77,10 +79,14 @@ if __name__ == '__main__':
         device = torch.device(args.device)
     )
 
-    trainer = UnsupervisedTrainer(
+    if args.model == 'scETMbatch':
+        trainer_class = BatchAdversarialTrainer
+    else:
+        trainer_class = UnsupervisedTrainer
+    trainer = trainer_class(
         model,
         adata,
-        train_instance_name = f"{args.dataset_str}_scETM{args.log_str}_seed{args.seed}",
+        train_instance_name = f"{args.dataset_str}_{args.model}{args.log_str}_seed{args.seed}",
         seed = args.seed,
         ckpt_dir = args.ckpt_dir,
         batch_size = args.batch_size,
@@ -105,7 +111,13 @@ if __name__ == '__main__':
         record_log_path = os.path.join(trainer.ckpt_dir, 'record.tsv'),
         writer = writer,
         eval_result_log_path = os.path.join(args.ckpt_dir, 'result.tsv'),
-        eval_kwargs = dict(resolutions=args.resolutions, color_by=args.color_by)
+        eval_kwargs = dict(resolutions=args.resolutions, color_by=args.color_by),
+        clf_cutoff_ratio = args.clf_cutoff_ratio,
+        clf_warmup_ratio = args.clf_warmup_ratio,
+        min_clf_weight = args.min_clf_weight,
+        max_clf_weight = args.max_clf_weight,
+        g_steps = args.g_steps,
+        d_steps = args.d_steps,
     )
 
     time_cost = time() - start_time

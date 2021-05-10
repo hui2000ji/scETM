@@ -284,7 +284,7 @@ class scETM(BaseCellModel):
 
         nll = (-recon_log * normed_cells if self.normed_loss else cells).sum(-1).mean()
         kl_delta = get_kl(mu_q_delta, logsigma_q_delta).mean()
-        loss = nll + hyper_param_dict['beta'] * kl_delta
+        loss = nll + hyper_param_dict['kl_weight'] * kl_delta
         record = dict(loss=loss, nll=nll, kl_delta=kl_delta)
 
         record = {k: v.detach().item() for k, v in record.items()}

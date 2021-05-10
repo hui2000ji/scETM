@@ -1,4 +1,4 @@
-from typing import Any, Mapping, Sequence, Tuple, Union, Iterable
+from typing import Any, Callable, Mapping, Sequence, Tuple, Union, Iterable
 import anndata
 import logging
 import numpy as np
@@ -60,7 +60,8 @@ class BaseCellModel(nn.Module):
     def train_step(self,
         optimizer: optim.Optimizer,
         data_dict: Mapping[str, torch.Tensor],
-        hyper_param_dict: Mapping[str, Any]
+        hyper_param_dict: Mapping[str, Any],
+        loss_update_callback: Union[None, Callable] = None
     ) -> Mapping[str, torch.Tensor]:
         """Executes a training step given a minibatch of data.
 
@@ -72,6 +73,8 @@ class BaseCellModel(nn.Module):
             data_dict: a dict containing the current minibatch for training.
             hyper_param_dict: a dict containing hyperparameters for the current
                 batch.
+            loss_update_callback: a callable that updates the loss and the
+                record dict.
         
         Returns:
             A dict storing the record for this training step, which typically
@@ -81,12 +84,32 @@ class BaseCellModel(nn.Module):
 
         self.train()
         optimizer.zero_grad()
-        loss, _, new_record = self(data_dict, hyper_param_dict)
+        loss, fwd_dict, new_record = self(data_dict, hyper_param_dict)
+        if loss_update_callback is not None:
+            loss, new_record = loss_update_callback(loss, fwd_dict, new_record)
         loss.backward()
         norms = torch.nn.utils.clip_grad_norm_(self.parameters(), 50)
         new_record['max_norm'] = norms.cpu().numpy()
         optimizer.step()
         return new_record
+
+    def _apply_to(self,
+        adata: anndata.AnnData,
+        batch_col: str = 'batch_indices',
+        batch_size: int = 2000,
+        hyper_param_dict: Union[dict, None] = None,
+        callback: Union[Callable, None] = None
+    ) -> None:
+        """Docstring (TODO)
+        """
+
+        sampler = CellSampler(adata, batch_size=batch_size, sample_batch_id=self.need_batch, n_epochs=1, batch_col=batch_col, shuffle=False)
+        self.eval()
+        for data_dict in sampler:
+            data_dict = {k: v.to(self.device) for k, v in data_dict.items()}
+            fwd_dict = self(data_dict, hyper_param_dict=hyper_param_dict)
+            if callback is not None:
+                callback(fwd_dict)
 
     def get_cell_embeddings_and_nll(self,
         adata: anndata.AnnData,
@@ -117,7 +140,7 @@ class BaseCellModel(nn.Module):
         """
 
         assert adata.n_vars == self.n_fixed_genes + self.n_trainable_genes
-        nll = 0.
+        nlls = []
         if self.need_batch and adata.obs[batch_col].nunique() != self.n_batches:
             _logger.warning(
                 f'adata.obs[{batch_col}] contains {adata.obs[batch_col].nunique()} batches, '
@@ -125,29 +148,30 @@ class BaseCellModel(nn.Module):
             )
             if self.need_batch:
                 _logger.warning('Disable decoding. You will not get reconstructed cell-gene matrix or nll.')
-                nll = None
+                nlls = None
         if emb_names is None:
             emb_names = self.emb_names
         self.eval()
         if isinstance(emb_names, str):
             emb_names = [emb_names]
 
-        sampler = CellSampler(adata, batch_size=batch_size, sample_batch_id=self.need_batch, n_epochs=1, batch_col=batch_col, shuffle=False)
         embs = {name: [] for name in emb_names}
-        for data_dict in sampler:
-            data_dict = {k: v.to(self.device) for k, v in data_dict.items()}
-            fwd_dict = self(data_dict, hyper_param_dict=dict(decode=nll is not None))
+        hyper_param_dict = dict(decode=nlls is not None)
+
+        def store_emb_and_nll(fwd_dict):
             for name in emb_names:
                 embs[name].append(fwd_dict[name].detach().cpu())
-            if nll is not None:
-                nll += fwd_dict['nll'].detach().item()
+            if nlls is not None:
+                nlls.append(fwd_dict['nll'].detach().item())
+
+        self._apply_to(adata, batch_col, batch_size, hyper_param_dict, callback=store_emb_and_nll)
+
         embs = {name: torch.cat(embs[name], dim=0).numpy() for name in emb_names}
-        if inplace:
-            adata.obsm.update(embs)
-        if nll is not None:
-            nll /= adata.n_obs
+        if nlls is not None:
+            nll = sum(nlls) / adata.n_obs
 
         if inplace:
+            adata.obsm.update(embs)
             return nll
         else:
             return embs, nll
