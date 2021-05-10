@@ -38,7 +38,7 @@ def evaluate(adata: ad.AnnData,
     plot_dir: Union[str, None] = None,
     min_dist: float = 0.3,
     spread: float = 1,
-    n_jobs: int = -1,
+    n_jobs: int = 1,
     random_state: Union[None, int, np.random.RandomState, np.random.Generator] = 0,
 ) -> Mapping[str, Union[float, None, Figure]]:
     """Evaluates the clustering and batch correction performance of the given

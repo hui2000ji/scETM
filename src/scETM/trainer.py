@@ -263,21 +263,21 @@ class UnsupervisedTrainer:
 
             # log and evaluate
             if self.epoch >= next_ckpt_epoch or self.epoch >= n_epochs:
-                _logger.info('=' * 10 + f'Epoch {self.epoch:.0f}' + '=' * 10)
+                _logger.info('=' * 10 + f'Epoch {next_ckpt_epoch:.0f}' + '=' * 10)
 
                 # log memory cost
                 _logger.info(repr(psutil.Process().memory_info()))
                 # log current lr and kl_weight
                 if self.lr_decay:
                     _logger.info(f'{"lr":12s}: {self.lr}')
-                _logger.info(f'{"kl_weight":12s}: {self._get_kl_weight(self.epoch, n_epochs):12.4f}')
+                _logger.info(f'{"kl_weight":12s}: {self._get_kl_weight(next_ckpt_epoch, n_epochs):12.4f}')
 
                 # log statistics of tracked items
                 recorder.log_and_clear_record()
                 
                 if eval:
                     current_eval_kwargs = eval_kwargs.copy()
-                    current_eval_kwargs['plot_fname'] = current_eval_kwargs['plot_fname'] + f'_epoch{int(self.epoch)}'
+                    current_eval_kwargs['plot_fname'] = current_eval_kwargs['plot_fname'] + f'_epoch{int(next_ckpt_epoch)}'
                     if self.test_adata is not self.adata:
                         test_nll = self.model.get_cell_embeddings_and_nll(self.test_adata, self.batch_size, batch_col=batch_col, emb_names=[])
                         if test_nll is not None:
@@ -296,7 +296,7 @@ class UnsupervisedTrainer:
                         with open(eval_result_log_path, 'a+') as f:
                             # ckpt_dir, epoch, test_nll, ari, nmi, k_bet, ebm, time, seed
                             f.write(f'{Path(self.ckpt_dir).name}\t'
-                                    f'{self.epoch}\t'
+                                    f'{next_ckpt_epoch}\t'
                                     f'{test_nll}\t'
                                     f'{result["ari"]}\t'
                                     f'{result["nmi"]}\t'
