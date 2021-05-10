@@ -83,7 +83,7 @@ if __name__ == '__main__':
     if args.model == 'scETMbatch':
         trainer = BatchAdversarialTrainer(
             model,
-            BatchClassifier(model.n_topics, model.n_batches, (model.n_topics // 2,)),
+            BatchClassifier(model.n_topics, model.n_batches, (model.n_topics // 2,), device = torch.device(args.device)),
             adata,
             train_instance_name = f"{args.dataset_str}_{args.model}{args.log_str}_seed{args.seed}",
             seed = args.seed,

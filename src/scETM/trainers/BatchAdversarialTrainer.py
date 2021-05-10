@@ -1,4 +1,5 @@
 from typing import Mapping, Union
+import numpy as np
 from torch import optim
 import torch
 import logging
@@ -136,8 +137,8 @@ class BatchAdversarialTrainer(UnsupervisedTrainer):
         # construct hyper_param_dict
         hyper_param_dict = {
             'kl_weight': self._calc_weight(self.epoch, kwargs['n_epochs'], 0, kwargs['kl_warmup_ratio'], kwargs['min_kl_weight'], kwargs['max_kl_weight']),
+            'clf_weight': self._calc_weight(self.epoch, kwargs['n_epochs'], kwargs['clf_cutoff_ratio'], kwargs['clf_warmup_ratio'], kwargs['min_clf_weight'], kwargs['max_clf_weight'])
         }
-        clf_weight = self._calc_weight(self.epoch, kwargs['n_epochs'], kwargs['clf_cutoff_ratio'], kwargs['clf_warmup_ratio'], kwargs['min_clf_weight'], kwargs['max_clf_weight'])
 
         # construct data_dict
         data_dict = {k: v.to(self.device) for k, v in next(dataloader).items()}
@@ -146,7 +147,7 @@ class BatchAdversarialTrainer(UnsupervisedTrainer):
         for _ in range(kwargs['g_steps']):
             self.model.train()
             self.batch_clf.eval()
-            if clf_weight > 0.:
+            if hyper_param_dict['clf_weight'] > 0.:
                 def loss_update_callback(loss, fwd_dict, new_record):
                     model_loss = self.batch_clf(fwd_dict[self.model.clustering_input], data_dict['batch_indices'])['model_loss']
                     loss += model_loss * hyper_param_dict['clf_weight']
@@ -156,7 +157,7 @@ class BatchAdversarialTrainer(UnsupervisedTrainer):
                 loss_update_callback = None
             new_record = self.model.train_step(self.optimizer, data_dict, hyper_param_dict, loss_update_callback)
 
-        if clf_weight > 0.:
+        if hyper_param_dict['clf_weight'] > 0.:
             self.batch_clf.train()
             self.model.eval()
             fwd_dict = self.model(data_dict, hyper_param_dict)
@@ -165,11 +166,10 @@ class BatchAdversarialTrainer(UnsupervisedTrainer):
                 clf_record = self.batch_clf.train_step(self.batch_clf_optimizer, emb, data_dict['batch_indices'])
             new_record.update(clf_record)
 
-        return new_record
+        return new_record, hyper_param_dict
 
     def before_eval(self,
         batch_col: str,
-
         **kwargs
     ) -> None:
         """Docstring (TODO)
@@ -183,8 +183,8 @@ class BatchAdversarialTrainer(UnsupervisedTrainer):
         self.batch_clf.eval()
         def store_emb_and_nll(data_dict, fwd_dict):
             emb = fwd_dict[self.model.clustering_input]
-            embs.append(emb.detach().cpu())
             logits.append(self.batch_clf(emb, data_dict['batch_indices'])['logit'].detach().cpu())
+            embs.append(emb.detach().cpu())
 
         self.model._apply_to(adata, batch_col, self.batch_size, dict(decode=False), callback=store_emb_and_nll)
 
@@ -194,5 +194,7 @@ class BatchAdversarialTrainer(UnsupervisedTrainer):
         correct = pred == adata.obs[batch_col].astype('category').cat.codes
 
         adata.obsm[self.model.clustering_input] = embs.numpy()
-        adata.obs['clf_pred'] = pred.numpy()
-        adata.obs['clf_correct'] = correct.numpy()
+        adata.obs['clf_pred'] = np.array(pred, dtype='str')
+        adata.obs['clf_pred'] = adata.obs['clf_pred'].astype('category').cat.set_categories(adata.obs[batch_col].cat.categories)
+        adata.obs['clf_correct'] = np.array(correct, dtype='str')
+        adata.obs['clf_correct'] = adata.obs['clf_correct'].astype('category')

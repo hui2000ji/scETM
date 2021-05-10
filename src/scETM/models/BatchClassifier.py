@@ -13,12 +13,13 @@ class BatchClassifier(nn.Module):
 
     @log_arguments
     def __init__(self,
-            n_input: int,
-            n_output: int,
-            hidden_sizes: Sequence[int],
-            bn: bool = False,
-            bn_track_running_stats: bool = False,
-            dropout_prob = 0.2,
+        n_input: int,
+        n_output: int,
+        hidden_sizes: Sequence[int],
+        bn: bool = False,
+        bn_track_running_stats: bool = False,
+        dropout_prob = 0.2,
+        device=torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     ) -> None:
         """Docstring (TODO)
         """
@@ -32,7 +33,7 @@ class BatchClassifier(nn.Module):
             bn=bn,
             bn_track_running_stats=bn_track_running_stats,
             dropout_prob=dropout_prob,
-        )
+        ).to(device)
 
     def forward(self, X: torch.Tensor, y: torch.Tensor) -> Mapping[str, torch.Tensor]:
         """Docstring (TODO)
@@ -40,7 +41,7 @@ class BatchClassifier(nn.Module):
 
         logit = self.batch_clf(X)
         if not self.training:
-            model_loss = (-F.log_softmax(logit, -1) * torch.zeros_like(y).fill_(0.5)).sum(-1).mean()
+            model_loss = (-F.log_softmax(logit, dim=-1) * torch.zeros_like(y).fill_(0.5).unsqueeze_(-1)).sum(-1).mean()
             return dict(logit=logit, model_loss=model_loss)
 
         clf_loss = F.cross_entropy(logit, y)

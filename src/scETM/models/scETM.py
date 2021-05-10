@@ -367,7 +367,7 @@ class scETM(BaseCellModel):
         topic_names = [f'topic{i}' for i in range(self.n_topics)]
         names = gene_names + topic_names
         is_topic = [False] * (self.n_trainable_genes + self.n_fixed_genes) + [True] * self.n_topics
-        metadata = np.array([names, is_topic]).T
+        metadata = np.array([names, is_topic]).T.tolist()
 
         gene_emb = self.rho.T.detach().cpu().numpy()
         topic_emb = self.alpha.detach().cpu().numpy()

@@ -260,7 +260,7 @@ class UnsupervisedTrainer:
         next_ckpt_epoch = int(np.ceil(self.epoch / eval_every) * eval_every)
 
         while self.epoch < n_epochs:
-            new_record = self.do_train_step(dataloader,
+            new_record, hyper_param_dict = self.do_train_step(dataloader,
                 n_epochs = n_epochs,
                 kl_warmup_ratio = kl_warmup_ratio,
                 min_kl_weight = min_kl_weight,
@@ -279,7 +279,8 @@ class UnsupervisedTrainer:
                 # log current lr and kl_weight
                 if self.lr_decay:
                     _logger.info(f'{"lr":12s}: {self.lr}')
-                _logger.info(f'{"kl_weight":12s}: {self._calc_weight(next_ckpt_epoch, n_epochs, kl_warmup_ratio, min_kl_weight, max_kl_weight):12.4f}')
+                for k, v in hyper_param_dict.items():
+                    _logger.info(f'{k:12s}: {v:12.4f}')
 
                 # log statistics of tracked items
                 recorder.log_and_clear_record()
@@ -360,7 +361,7 @@ class UnsupervisedTrainer:
         # train for one step, record tracked items (e.g. loss)
         new_record = self.model.train_step(self.optimizer, data_dict, hyper_param_dict)
 
-        return new_record
+        return new_record, hyper_param_dict
 
     def before_eval(self, batch_col: str, **kwargs) -> None:
         """Docstring (TODO)
