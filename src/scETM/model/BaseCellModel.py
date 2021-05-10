@@ -94,7 +94,7 @@ class BaseCellModel(nn.Module):
         emb_names: Union[str, Iterable[str], None] = None,
         batch_col: str = 'batch_indices',
         inplace: bool = True
-    ) -> Union[float, Tuple[Mapping[str, np.ndarray], float]]:
+    ) -> Union[Union[None, float], Tuple[Mapping[str, np.ndarray], Union[None, float]]]:
         """Calculates cell embeddings and nll for the given dataset.
 
         If inplace, cell embeddings will be stored to adata.obsm. You can
@@ -117,11 +117,15 @@ class BaseCellModel(nn.Module):
         """
 
         assert adata.n_vars == self.n_fixed_genes + self.n_trainable_genes
+        nll = 0.
         if self.need_batch and adata.obs[batch_col].nunique() != self.n_batches:
             _logger.warning(
                 f'adata.obs[{batch_col}] contains {adata.obs[batch_col].nunique()} batches, '
-                f'while self.n_batches == {self.n_batches}'
+                f'while self.n_batches == {self.n_batches}.'
             )
+            if self.need_batch:
+                _logger.warning('Disable decoding. You will not get reconstructed cell-gene matrix or nll.')
+                nll = None
         if emb_names is None:
             emb_names = self.emb_names
         self.eval()
@@ -130,18 +134,19 @@ class BaseCellModel(nn.Module):
 
         sampler = CellSampler(adata, batch_size=batch_size, sample_batch_id=self.need_batch, n_epochs=1, batch_col=batch_col, shuffle=False)
         embs = {name: [] for name in emb_names}
-        nll = 0.
         for data_dict in sampler:
             data_dict = {k: v.to(self.device) for k, v in data_dict.items()}
-            fwd_dict = self(data_dict)
+            fwd_dict = self(data_dict, hyper_param_dict=dict(decode=nll is not None))
             for name in emb_names:
                 embs[name].append(fwd_dict[name].detach().cpu())
-            nll += fwd_dict['nll'].detach().item()
+            if nll is not None:
+                nll += fwd_dict['nll'].detach().item()
         embs = {name: torch.cat(embs[name], dim=0).numpy() for name in emb_names}
         if inplace:
             for emb_name, emb in embs.items():
                 adata.obsm[emb_name] = emb
-        nll /= adata.n_obs
+        if nll is not None:
+            nll /= adata.n_obs
 
         if inplace:
             return nll

@@ -269,13 +269,11 @@ class scETM(BaseCellModel):
 
         if not self.training:
             theta = F.softmax(mu_q_delta, dim=-1)
-            recon_log = self.decode(theta, data_dict.get('batch_indices', None))
-            fwd_dict = dict(
-                theta=theta,
-                delta=mu_q_delta,
-                recon_log=recon_log,
-                nll = (-recon_log * (normed_cells if self.normed_loss else cells)).sum()
-            )
+            fwd_dict = dict(theta=theta, delta=mu_q_delta)
+            if 'decode' in hyper_param_dict and hyper_param_dict['decode']:
+                recon_log = self.decode(theta, data_dict.get('batch_indices', None))
+                fwd_dict['recon_log'] = recon_log
+                fwd_dict['nll'] = (-recon_log * (normed_cells if self.normed_loss else cells)).sum()
             return fwd_dict
 
         recon_log = self.decode(theta, data_dict.get('batch_indices', None))
@@ -295,13 +293,13 @@ class scETM(BaseCellModel):
         
         return loss, fwd_dict, record
 
-    def get_embeddings_and_nll(self,
+    def get_all_embeddings_and_nll(self,
         adata: anndata.AnnData,
         batch_size: int = 2000,
         emb_names: Union[str, Iterable[str], None] = None,
         batch_col: str = 'batch_indices',
         inplace: bool = True
-    ) -> Union[float, Tuple[Mapping[str, np.ndarray], float]]:
+    ) -> Union[Union[None, float], Tuple[Mapping[str, np.ndarray], Union[None, float]]]:
         """Calculates cell, gene, topic embeddings and nll for the dataset.
 
         If inplace, cell embeddings will be stored to adata.obsm. You can

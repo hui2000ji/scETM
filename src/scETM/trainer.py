@@ -275,11 +275,12 @@ class UnsupervisedTrainer:
                     current_eval_kwargs = eval_kwargs.copy()
                     current_eval_kwargs['plot_fname'] = current_eval_kwargs['plot_fname'] + f'_epoch{int(self.epoch)}'
                     if self.test_adata is not self.adata:
-                        test_nll = self.model.get_cell_embeddings_and_nll(self.test_adata, self.batch_size, batch_col=batch_col)
-                        _logger.info(f'test nll: {test_nll:7.4f}')
+                        test_nll = self.model.get_cell_embeddings_and_nll(self.test_adata, self.batch_size, batch_col=batch_col, emb_names=[])
+                        if test_nll is not None:
+                            _logger.info(f'test nll: {test_nll:7.4f}')
                     else:
                         test_nll = None
-                    self.model.get_cell_embeddings_and_nll(self.adata, self.batch_size, batch_col=batch_col)
+                    self.model.get_cell_embeddings_and_nll(self.adata, self.batch_size, batch_col=batch_col, emb_names=[self.model.clustering_input])
                     result = evaluate(adata = self.adata, embedding_key = self.model.clustering_input, **current_eval_kwargs)
                     if eval_result_log_path is not None:
                         with open(eval_result_log_path, 'a+') as f:
