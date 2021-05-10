@@ -151,7 +151,7 @@ class BatchAdversarialTrainer(UnsupervisedTrainer):
                 def loss_update_callback(loss, fwd_dict, new_record):
                     model_loss = self.batch_clf(fwd_dict[self.model.clustering_input], data_dict['batch_indices'])['model_loss']
                     loss += model_loss * hyper_param_dict['clf_weight']
-                    new_record['model_loss'] = model_loss
+                    new_record['model_loss'] = model_loss.detach().item()
                     return loss, new_record
             else:
                 loss_update_callback = None

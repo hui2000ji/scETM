@@ -30,7 +30,7 @@ class _stats_recorder:
 
     def __init__(self,
         record_log_path: Union[str, None] = None,
-        fmt: str = "12.4f",
+        fmt: str = "10.4g",
         writer: Union[None, SummaryWriter] = None,
         metadata: Union[None, pd.DataFrame] = None
     ) -> None:

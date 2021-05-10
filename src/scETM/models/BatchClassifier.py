@@ -34,6 +34,7 @@ class BatchClassifier(nn.Module):
             bn_track_running_stats=bn_track_running_stats,
             dropout_prob=dropout_prob,
         ).to(device)
+        self.n_output = n_output
 
     def forward(self, X: torch.Tensor, y: torch.Tensor) -> Mapping[str, torch.Tensor]:
         """Docstring (TODO)
@@ -41,7 +42,7 @@ class BatchClassifier(nn.Module):
 
         logit = self.batch_clf(X)
         if not self.training:
-            model_loss = (-F.log_softmax(logit, dim=-1) * torch.zeros_like(y).fill_(0.5).unsqueeze_(-1)).sum(-1).mean()
+            model_loss = (-F.log_softmax(logit, dim=-1) * torch.zeros_like(y).fill_(1/self.n_output).unsqueeze_(-1)).sum(-1).mean()
             return dict(logit=logit, model_loss=model_loss)
 
         clf_loss = F.cross_entropy(logit, y)
@@ -57,7 +58,7 @@ class BatchClassifier(nn.Module):
 
         self.train()
         optimizer.zero_grad()
-        loss, fwd_dict, new_records = self.batch_clf(X, y)
+        loss, fwd_dict, new_records = self(X, y)
         loss.backward()
         optimizer.step()
         new_records['clf_acc'] = (fwd_dict['logit'].argmax(1) == y).to(torch.float).mean().detach().item()

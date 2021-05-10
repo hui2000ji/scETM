@@ -330,7 +330,7 @@ class UnsupervisedTrainer:
         """Docstring (TODO)
         """
         if writer is not None:
-            for k, v in result:
+            for k, v in result.items():
                 if isinstance(v, float):
                     writer.add_scalar(k, v, next_ckpt_epoch)
         if eval_result_log_path is not None:
