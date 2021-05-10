@@ -343,21 +343,22 @@ class scETM(BaseCellModel):
             return result_dict, nll
 
     def write_topic_gene_embeddings_to_tensorboard(self,
-        tensorboard_dir: Union[None, str],
+        writer: Union[None, SummaryWriter] = None,
         gene_names: Union[None, Sequence[str]] = None,
         tag: Union[None, str] = None
     ) -> None:
         """Write topic and gene embeddings to tensorboard.
 
         Args:
-            tensorboard_dir: directory to save the topic and gene embeddings.
+            writer: an initialized Summarywriter.
+            gene_names: a sequence of strings storing the names of the genes.
+            tag: tag of the embedding.
         """
 
-        if tensorboard_dir is None:
+        if writer is None:
             return
 
         _logger.info('Writing topic and gene embeddings to tensorboard...')
-        writer = SummaryWriter(tensorboard_dir)
 
         if gene_names is None:
             gene_names = [f'gene{i}' for i in range(self.n_trainable_genes + self.n_fixed_genes)]
@@ -371,4 +372,3 @@ class scETM(BaseCellModel):
         embs = np.concatenate([gene_emb, topic_emb], axis=0)
 
         writer.add_embedding(embs, names, tag=tag)
-        writer.close()

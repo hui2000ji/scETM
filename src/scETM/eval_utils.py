@@ -36,7 +36,7 @@ def evaluate(adata: ad.AnnData,
     plot_fname: str = "umap",
     plot_ftype: str = "pdf",
     plot_dir: Union[str, None] = None,
-    tensorboard_dir: Union[str, None] = None,
+    writer: Union[None, SummaryWriter] = None,
     min_dist: float = 0.3,
     spread: float = 1,
     n_jobs: int = 1,
@@ -69,8 +69,8 @@ def evaluate(adata: ad.AnnData,
         plot_ftype: file type of the generated plot. Only used if is drawing.
         plot_dir: directory to save the generated plot. If None, do not save
             the plot.
-        tensorboard_dir: directory to save the UMAP plot. Only used if is
-            drawing.
+        writer: an initialized SummaryWriter to save the UMAP plot to. Only
+            used if is drawing.
         min_dist: the min_dist argument in sc.tl.umap. Only used is drawing.
         spread: the spread argument in sc.tl.umap. Only used if is drawing.
         n_jobs: # jobs to generate. If <= 0, this is set to the number of
@@ -127,9 +127,8 @@ def evaluate(adata: ad.AnnData,
             color_by = [cluster_key] + color_by
         fig = draw_embeddings(adata=adata, color_by=color_by, min_dist=min_dist, spread=spread,
             ckpt_dir=plot_dir, fname=f'{plot_fname}.{plot_ftype}', return_fig=return_fig)
-        writer = SummaryWriter(tensorboard_dir)
-        writer.add_embedding(adata.obsm['X_umap'], tag=plot_fname)
-        writer.close()
+        if writer is not None:
+            writer.add_embedding(adata.obsm['X_umap'], tag=plot_fname)
     else:
         fig = None
     

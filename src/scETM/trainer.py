@@ -201,7 +201,7 @@ class UnsupervisedTrainer:
         batch_col: str = "batch_indices",
         save_model_ckpt: bool = True,
         record_log_path: Union[str, None] = None,
-        tensorboard_dir: Union[str, None] = None,
+        writer: Union[None, SummaryWriter] = None,
         eval_result_log_path: Union[str, None] = None,
         eval_kwargs: Union[None, dict] = None
     ) -> None:
@@ -220,8 +220,7 @@ class UnsupervisedTrainer:
             save_model_ckpt: whether to save the model checkpoints.
             record_log_path: file path to log the training records. If None, do
                 not log.
-            tensorboard_dir: directory path to tensorboard logs. If None, do
-                not log.
+            writer: an initialized SummaryWriter for tensorboard logging.
             eval_result_log_path: file path to log the evaluation results. If
                 None, do not log.
             eval_kwargs: dict to pass to the evaluate function as kwargs.
@@ -231,7 +230,7 @@ class UnsupervisedTrainer:
             batch_col = batch_col,
             plot_fname = f'{self.train_instance_name}_{self.model.clustering_input}',
             plot_dir = self.ckpt_dir,
-            tensorboard_dir = tensorboard_dir
+            writer = writer
         )
         if eval_kwargs is not None:
             default_eval_kwargs.update(eval_kwargs)
@@ -245,7 +244,7 @@ class UnsupervisedTrainer:
         dataloader = iter(sampler)
         
         # set up the stats recorder
-        recorder = _stats_recorder(record_log_path=record_log_path, tensorboard_dir=tensorboard_dir, metadata=self.adata.obs)
+        recorder = _stats_recorder(record_log_path=record_log_path, writer=writer, metadata=self.adata.obs)
         next_ckpt_epoch = int(np.ceil(self.epoch / eval_every) * eval_every)
 
         while self.epoch < n_epochs:
@@ -286,7 +285,8 @@ class UnsupervisedTrainer:
                     current_eval_kwargs = eval_kwargs.copy()
                     current_eval_kwargs['plot_fname'] = current_eval_kwargs['plot_fname'] + f'_epoch{int(next_ckpt_epoch)}'
                     self.model.get_cell_embeddings_and_nll(self.adata, self.batch_size, batch_col=batch_col, emb_names=[self.model.clustering_input])
-                    self.model.write_topic_gene_embeddings_to_tensorboard(tensorboard_dir, self.adata.var_names, f'gene_topic_emb_epoch{int(next_ckpt_epoch)}')
+                    if isinstance(self.model, scETM):
+                        self.model.write_topic_gene_embeddings_to_tensorboard(writer, self.adata.var_names, f'gene_topic_emb_epoch{int(next_ckpt_epoch)}')
                     result = evaluate(adata = self.adata, embedding_key = self.model.clustering_input, **current_eval_kwargs)
                     if eval_result_log_path is not None:
                         with open(eval_result_log_path, 'a+') as f:
@@ -322,13 +322,13 @@ class _stats_recorder:
         record: the training statistics record.
         fmt: print format for the training statistics.
         log_file: the file stream to write logs to.
-        writer: the SummaryWriter object for tensorboard logging.
+        writer: an initialized SummaryWriter for tensorboard logging.
     """
 
     def __init__(self,
         record_log_path: Union[str, None] = None,
         fmt: str = "12.4f",
-        tensorboard_dir: Union[str, None] = None,
+        writer: Union[None, SummaryWriter] = None,
         metadata: Union[None, pd.DataFrame] = None
     ) -> None:
         """Initializes the statistics recorder.
@@ -343,10 +343,9 @@ class _stats_recorder:
         self.record: DefaultDict[List] = defaultdict(list)
         self.fmt: str = fmt
         self.log_file: Union[None, IO] = None
-        self.writer: Union[None, SummaryWriter] = None
-        if tensorboard_dir is not None:
-            self.writer = SummaryWriter(tensorboard_dir)
-            metadata.to_csv(os.path.join(tensorboard_dir, 'metadata.tsv'), sep='\t')
+        self.writer: Union[None, SummaryWriter] = writer
+        if writer is not None:
+            metadata.to_csv(os.path.join(writer.get_logdir(), 'metadata.tsv'), sep='\t')
         if record_log_path is not None:
             self.log_file = open(record_log_path, 'w')
             self._header_logged: bool = False
@@ -393,8 +392,6 @@ class _stats_recorder:
     def __del__(self) -> None:
         if self.log_file is not None:
             self.log_file.close()
-        if self.writer is not None:
-            self.writer.close()
 
 
 def train_test_split(

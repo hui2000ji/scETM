@@ -1,4 +1,5 @@
 import psutil
+from torch.utils.tensorboard import SummaryWriter
 from arg_parser import parser
 import torch
 import os
@@ -89,6 +90,8 @@ if __name__ == '__main__':
         lr_decay = args.lr_decay
     )
 
+    writer = SummaryWriter(os.path.join(trainer.ckpt_dir, 'tensorboard'))
+
     trainer.train(
         n_epochs = args.n_epochs,
         eval_every = args.eval_every,
@@ -99,7 +102,7 @@ if __name__ == '__main__':
         save_model_ckpt = not args.no_model_ckpt,
         eval = not args.no_eval,
         record_log_path = os.path.join(trainer.ckpt_dir, 'record.tsv'),
-        tensorboard_dir = os.path.join(trainer.ckpt_dir, 'tensorboard'),
+        writer = writer,
         eval_result_log_path = os.path.join(args.ckpt_dir, 'result.tsv'),
         eval_kwargs = dict(resolutions=args.resolutions, color_by=args.color_by)
     )
@@ -128,7 +131,8 @@ if __name__ == '__main__':
         plot_fname = f'{train_instance_name}_{clustering_input}_eval',
         plot_dir = ckpt_dir,
         tensorboard_dir = os.path.join(ckpt_dir, 'tensorboard'),
-        color_by=args.color_by
+        color_by=args.color_by,
+        writer = writer
     )
     if args.target_h5ad_path:
         with open(os.path.join(args.ckpt_dir, 'transfer.tsv'), 'a+') as f:
