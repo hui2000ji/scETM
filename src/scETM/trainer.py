@@ -113,6 +113,9 @@ class UnsupervisedTrainer:
             os.makedirs(self.ckpt_dir, exist_ok=True)
             initialize_logger(self.ckpt_dir)
             _logger.info(f'ckpt_dir: {self.ckpt_dir}')
+
+            # save adata.obs to ckpt_dir
+            self.adata.obs.to_csv(os.path.join(self.ckpt_dir, 'metadata.tsv'))
         else:
             self.ckpt_dir = None
 
@@ -287,11 +290,16 @@ class UnsupervisedTrainer:
                     self.model.get_cell_embeddings_and_nll(self.adata, self.batch_size, batch_col=batch_col, emb_names=[self.model.clustering_input])
                     recorder.log_embeddings(
                         mat=self.adata.obsm[self.model.clustering_input],
-                        metadata=self.adata.obs,
                         global_step=next_ckpt_epoch,
                         tag=self.model.clustering_input
                     )
                     result = evaluate(adata = self.adata, embedding_key = self.model.clustering_input, **current_eval_kwargs)
+                    if 'X_umap' in self.adata.obsm:
+                        recorder.log_embeddings(
+                            mat=self.adata.obsm['X_umap'],
+                            global_step=next_ckpt_epoch,
+                            tag='UMAP'
+                        )
                     if eval_result_log_path is not None:
                         with open(eval_result_log_path, 'a+') as f:
                             # ckpt_dir, epoch, test_nll, ari, nmi, k_bet, ebm, time, seed
@@ -369,8 +377,8 @@ class _stats_recorder:
         for key, val in new_record.items():
             print(f'{key}: {val:{self.fmt}}', end='\t')
             self.record[key].append(val)
-        if self.writer is not None:
-            self.writer.add_scalars('Loss and gradient', new_record, epoch)
+            if self.writer is not None:
+                self.writer.add_scalar(key, val, epoch)
         print(f'Epoch {int(epoch):5d}/{total_epochs:5d}\tNext ckpt: {next_ckpt_epoch:7d}', end='\r', flush=True)
 
     def log_and_clear_record(self) -> None:
@@ -380,10 +388,10 @@ class _stats_recorder:
             _logger.info(f'{key:12s}: {np.mean(val):{self.fmt}}')
         self.record = defaultdict(list)
 
-    def log_embeddings(self, mat: np.ndarray, metadata: pd.DataFrame, global_step: int, tag: str) -> None:
+    def log_embeddings(self, mat: np.ndarray, global_step: int, tag: str) -> None:
         if self.writer is None:
             return
-        self.writer.add_embedding(mat=mat, metadata=metadata.values.tolist(), global_step=global_step, tag=tag, metadata_header=list(metadata.columns))
+        self.writer.add_embedding(mat=mat, global_step=global_step, tag=tag)
 
     def __del__(self) -> None:
         if self.log_file is not None:
