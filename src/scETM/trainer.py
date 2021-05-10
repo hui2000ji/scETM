@@ -115,7 +115,7 @@ class UnsupervisedTrainer:
             _logger.info(f'ckpt_dir: {self.ckpt_dir}')
 
             # save adata.obs to ckpt_dir
-            self.adata.obs.to_csv(os.path.join(self.ckpt_dir, 'metadata.tsv'))
+            self.adata.obs.to_csv(os.path.join(self.ckpt_dir, 'metadata.tsv'), sep='\t')
         else:
             self.ckpt_dir = None
 

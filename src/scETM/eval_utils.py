@@ -437,6 +437,7 @@ def draw_embeddings(adata: ad.AnnData,
         If return_fig is True, return the figure containing the plot.
     """
 
+    _logger.info(f'Plotting UMAP embeddings')
     sc.tl.umap(adata, min_dist=min_dist, spread=spread)
     fig = sc.pl.umap(adata, color=color_by, show=False, return_fig=True)
     if ckpt_dir is not None:
