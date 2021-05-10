@@ -50,7 +50,7 @@ class UnsupervisedTrainer:
         ckpt_dir: directory to store the logs, the checkpoints and the plots.
     """
 
-    attr_fname: Mapping(str, str) = dict(
+    attr_fname: Mapping[str, str] = dict(
         model = 'model',
         optimizer = 'opt'
     )

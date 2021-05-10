@@ -109,7 +109,7 @@ class BaseCellModel(nn.Module):
             data_dict = {k: v.to(self.device) for k, v in data_dict.items()}
             fwd_dict = self(data_dict, hyper_param_dict=hyper_param_dict)
             if callback is not None:
-                callback(fwd_dict)
+                callback(data_dict, fwd_dict)
 
     def get_cell_embeddings_and_nll(self,
         adata: anndata.AnnData,
@@ -158,7 +158,7 @@ class BaseCellModel(nn.Module):
         embs = {name: [] for name in emb_names}
         hyper_param_dict = dict(decode=nlls is not None)
 
-        def store_emb_and_nll(fwd_dict):
+        def store_emb_and_nll(data_dict, fwd_dict):
             for name in emb_names:
                 embs[name].append(fwd_dict[name].detach().cpu())
             if nlls is not None:

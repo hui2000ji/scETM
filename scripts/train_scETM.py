@@ -12,6 +12,7 @@ import logging
 from pathlib import Path
 from scETM import scETM, UnsupervisedTrainer, initialize_logger, evaluate
 import matplotlib
+from scETM.models.BatchClassifier import BatchClassifier
 
 from scETM.trainers.BatchAdversarialTrainer import BatchAdversarialTrainer
 
@@ -75,27 +76,39 @@ if __name__ == '__main__':
         norm_cells = args.norm_cells,
         normed_loss = args.normed_loss,
         enable_batch_bias = args.batch_bias,
-        rho_fixed_emb=adata.varm['gene_emb'].T,
+        rho_fixed_emb=adata.varm['gene_emb'].T if 'gene_emb' in adata.varm else None,
         device = torch.device(args.device)
     )
 
     if args.model == 'scETMbatch':
-        trainer_class = BatchAdversarialTrainer
+        trainer = BatchAdversarialTrainer(
+            model,
+            BatchClassifier(model.n_topics, model.n_batches, (model.n_topics // 2,)),
+            adata,
+            train_instance_name = f"{args.dataset_str}_{args.model}{args.log_str}_seed{args.seed}",
+            seed = args.seed,
+            ckpt_dir = args.ckpt_dir,
+            batch_size = args.batch_size,
+            test_ratio = args.test_ratio,
+            data_split_seed = args.data_split_seed,
+            restore_epoch = args.restore_epoch,
+            init_lr = args.lr,
+            lr_decay = args.lr_decay
+        )
     else:
-        trainer_class = UnsupervisedTrainer
-    trainer = trainer_class(
-        model,
-        adata,
-        train_instance_name = f"{args.dataset_str}_{args.model}{args.log_str}_seed{args.seed}",
-        seed = args.seed,
-        ckpt_dir = args.ckpt_dir,
-        batch_size = args.batch_size,
-        test_ratio = args.test_ratio,
-        data_split_seed = args.data_split_seed,
-        restore_epoch = args.restore_epoch,
-        init_lr = args.lr,
-        lr_decay = args.lr_decay
-    )
+        trainer = UnsupervisedTrainer(
+            model,
+            adata,
+            train_instance_name = f"{args.dataset_str}_{args.model}{args.log_str}_seed{args.seed}",
+            seed = args.seed,
+            ckpt_dir = args.ckpt_dir,
+            batch_size = args.batch_size,
+            test_ratio = args.test_ratio,
+            data_split_seed = args.data_split_seed,
+            restore_epoch = args.restore_epoch,
+            init_lr = args.lr,
+            lr_decay = args.lr_decay
+        )
 
     writer = SummaryWriter(os.path.join(trainer.ckpt_dir, 'tensorboard'))
 

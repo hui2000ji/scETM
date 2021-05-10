@@ -9,8 +9,8 @@ import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
 from torch.distributions import Normal, Independent
 
-from scETM.model.BaseCellModel import BaseCellModel
 from scETM.logging_utils import log_arguments
+from .BaseCellModel import BaseCellModel
 from .model_utils import (
     InputPartlyTrainableLinear,
     PartlyTrainableParameter2D,

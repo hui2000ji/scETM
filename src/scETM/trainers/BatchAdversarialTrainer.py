@@ -16,7 +16,7 @@ class BatchAdversarialTrainer(UnsupervisedTrainer):
     """Docstring here (TODO)
     """
 
-    attr_fname: Mapping(str, str) = dict(
+    attr_fname: Mapping[str, str] = dict(
         model = 'model',
         optimizer = 'opt',
         batch_clf = 'bmodel',
@@ -60,10 +60,10 @@ class BatchAdversarialTrainer(UnsupervisedTrainer):
         # instantiate the batch classifier optimizer
         self.batch_clf_optimizer: optim.Optimizer = optim.Adam(self.batch_clf.parameters(), lr=self.init_lr)
     
-    def update_step(self, jump_to_step: Union[None, int]) -> None:
+    def update_step(self, jump_to_step: Union[None, int] = None) -> None:
         """Docstring here (TODO)
         """
-        
+
         super().update_step(jump_to_step=jump_to_step)
         if self.lr_decay:
             for param_group in self.batch_clf_optimizer.param_groups:
@@ -137,13 +137,13 @@ class BatchAdversarialTrainer(UnsupervisedTrainer):
         hyper_param_dict = {
             'kl_weight': self._calc_weight(self.epoch, kwargs['n_epochs'], 0, kwargs['kl_warmup_ratio'], kwargs['min_kl_weight'], kwargs['max_kl_weight']),
         }
-        clf_weight = self._calc_weight(self.epoch, kwargs['n_epochs'], kwargs['clf_ratio'], kwargs['clf_warmup_ratio'], kwargs['min_clf_weight'], kwargs['max_clf_weight'])
+        clf_weight = self._calc_weight(self.epoch, kwargs['n_epochs'], kwargs['clf_cutoff_ratio'], kwargs['clf_warmup_ratio'], kwargs['min_clf_weight'], kwargs['max_clf_weight'])
 
         # construct data_dict
         data_dict = {k: v.to(self.device) for k, v in next(dataloader).items()}
 
         # train for one step, record tracked items (e.g. loss)
-        for _ in kwargs['g_steps']:
+        for _ in range(kwargs['g_steps']):
             self.model.train()
             self.batch_clf.eval()
             if clf_weight > 0.:
@@ -161,7 +161,7 @@ class BatchAdversarialTrainer(UnsupervisedTrainer):
             self.model.eval()
             fwd_dict = self.model(data_dict, hyper_param_dict)
             emb = fwd_dict[self.model.clustering_input].detach()
-            for _ in kwargs['d_steps']:
+            for _ in range(kwargs['d_steps']):
                 clf_record = self.batch_clf.train_step(self.batch_clf_optimizer, emb, data_dict['batch_indices'])
             new_record.update(clf_record)
 
@@ -176,17 +176,17 @@ class BatchAdversarialTrainer(UnsupervisedTrainer):
         """
 
         adata = self.adata
-        assert adata.n_vars == self.n_fixed_genes + self.n_trainable_genes
+        assert adata.n_vars == self.model.n_fixed_genes + self.model.n_trainable_genes
         logits = []
         embs = []
 
         self.batch_clf.eval()
-        def store_emb_and_nll(fwd_dict):
+        def store_emb_and_nll(data_dict, fwd_dict):
             emb = fwd_dict[self.model.clustering_input]
             embs.append(emb.detach().cpu())
-            logits.append(self.batch_clf(emb)['logit'].detach().cpu())
+            logits.append(self.batch_clf(emb, data_dict['batch_indices'])['logit'].detach().cpu())
 
-        self._apply_to(adata, batch_col, self.batch_size, dict(decode=False), callback=store_emb_and_nll)
+        self.model._apply_to(adata, batch_col, self.batch_size, dict(decode=False), callback=store_emb_and_nll)
 
         embs = torch.cat(embs, dim=0)
         logits = torch.cat(logits, dim=0)
