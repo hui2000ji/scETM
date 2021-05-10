@@ -384,11 +384,6 @@ class _stats_recorder:
             _logger.info(f'{key:12s}: {np.mean(val):{self.fmt}}')
         self.record = defaultdict(list)
 
-    def log_embeddings(self, mat: np.ndarray, global_step: int, tag: str) -> None:
-        if self.writer is None:
-            return
-        self.writer.add_embedding(mat=mat, global_step=global_step, tag=tag)
-
     def __del__(self) -> None:
         if self.log_file is not None:
             self.log_file.close()
