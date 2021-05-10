@@ -383,7 +383,7 @@ class _stats_recorder:
     def log_embeddings(self, mat: np.ndarray, metadata: pd.DataFrame, global_step: int, tag: str) -> None:
         if self.writer is None:
             return
-        self.writer.add_embedding(mat=mat, metadata=metadata.values, global_step=global_step, tag=tag, metadata_header=list(metadata.columns))
+        self.writer.add_embedding(mat=mat, metadata=metadata.values.tolist(), global_step=global_step, tag=tag, metadata_header=list(metadata.columns))
 
     def __del__(self) -> None:
         if self.log_file is not None:
