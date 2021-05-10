@@ -286,7 +286,7 @@ class UnsupervisedTrainer:
                         test_nll = None
                     self.model.get_cell_embeddings_and_nll(self.adata, self.batch_size, batch_col=batch_col, emb_names=[self.model.clustering_input])
                     recorder.log_embeddings(
-                        emb=self.adata.obsm[self.model.clustering_input],
+                        mat=self.adata.obsm[self.model.clustering_input],
                         metadata=self.adata.obs[batch_col],
                         global_step=next_ckpt_epoch,
                         tag=self.model.clustering_input
@@ -380,10 +380,10 @@ class _stats_recorder:
             _logger.info(f'{key:12s}: {np.mean(val):{self.fmt}}')
         self.record = defaultdict(list)
 
-    def log_embeddings(self, emb: np.ndarray, metadata: pd.Series, global_step: int, tag: str) -> None:
+    def log_embeddings(self, mat: np.ndarray, metadata: pd.Series, global_step: int, tag: str) -> None:
         if self.writer is None:
             return
-        self.writer.add_embedding(emb=emb, metadata=metadata, global_step=global_step, tag=tag)
+        self.writer.add_embedding(mat=mat, metadata=metadata, global_step=global_step, tag=tag)
 
     def __del__(self) -> None:
         if self.log_file is not None:
