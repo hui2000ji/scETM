@@ -287,7 +287,7 @@ class UnsupervisedTrainer:
                     self.model.get_cell_embeddings_and_nll(self.adata, self.batch_size, batch_col=batch_col, emb_names=[self.model.clustering_input])
                     recorder.log_embeddings(
                         mat=self.adata.obsm[self.model.clustering_input],
-                        metadata=self.adata.obs[batch_col],
+                        metadata=self.adata.obs,
                         global_step=next_ckpt_epoch,
                         tag=self.model.clustering_input
                     )
@@ -369,8 +369,8 @@ class _stats_recorder:
         for key, val in new_record.items():
             print(f'{key}: {val:{self.fmt}}', end='\t')
             self.record[key].append(val)
-            if self.writer is not None:
-                self.writer.add_scalar(key, val, epoch)
+        if self.writer is not None:
+            self.writer.add_scalars('Loss and gradient', new_record, epoch)
         print(f'Epoch {int(epoch):5d}/{total_epochs:5d}\tNext ckpt: {next_ckpt_epoch:7d}', end='\r', flush=True)
 
     def log_and_clear_record(self) -> None:
@@ -380,10 +380,10 @@ class _stats_recorder:
             _logger.info(f'{key:12s}: {np.mean(val):{self.fmt}}')
         self.record = defaultdict(list)
 
-    def log_embeddings(self, mat: np.ndarray, metadata: pd.Series, global_step: int, tag: str) -> None:
+    def log_embeddings(self, mat: np.ndarray, metadata: pd.DataFrame, global_step: int, tag: str) -> None:
         if self.writer is None:
             return
-        self.writer.add_embedding(mat=mat, metadata=metadata, global_step=global_step, tag=tag)
+        self.writer.add_embedding(mat=mat, metadata=metadata.values, global_step=global_step, tag=tag, metadata_header=list(metadata.columns))
 
     def __del__(self) -> None:
         if self.log_file is not None:
