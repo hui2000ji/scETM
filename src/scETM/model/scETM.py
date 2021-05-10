@@ -117,9 +117,9 @@ class scETM(BaseCellModel):
             rho_fixed_emb: part of the gene embedding matrix (rho) with shape
                 [L_fixed, G], where everything is fixed. This could be a
                 pathway-gene matrix.
-            rho_trainable_emb: part of the gene embedding matrix (rho) with
-                shape [L_trainable, G], where a submatrix of shape
-                [L_trainable, G_fixed] is fixed and the rest is trainable.
+            rho_fixed_gene: part of the gene embedding matrix (rho) with
+                shape [L_trainable, G_fixed]. This will become a part of
+                self.rho_trainable_emb.
             device: device to store the model parameters.
         """
 
@@ -159,7 +159,7 @@ class scETM(BaseCellModel):
             self.rho_trainable_emb.fixed = torch.FloatTensor(rho_fixed_gene)
         if rho_fixed_emb is not None:
             assert rho_fixed_emb.shape[1] == self.n_fixed_genes + self.n_trainable_genes
-            self.rho_fixed_emb = torch.FloatTensor(rho_fixed_emb)
+            self.rho_fixed_emb = torch.FloatTensor(rho_fixed_emb).to(device)
 
         self.alpha = nn.Parameter(torch.randn(self.n_topics, self.trainable_gene_emb_dim + (self.rho_fixed_emb.shape[0] if self.rho_fixed_emb is not None else 0)))
         self._init_batch_and_global_biases()
