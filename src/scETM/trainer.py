@@ -1,10 +1,11 @@
 import os
 import copy
 from pathlib import Path
+from matplotlib.figure import Figure
 import pandas as pd
 import time
 import random
-from typing import DefaultDict, IO, List, Sequence, Union, Tuple
+from typing import DefaultDict, IO, List, Mapping, Sequence, Union, Tuple
 import psutil
 import logging
 from collections import defaultdict
@@ -282,24 +283,15 @@ class UnsupervisedTrainer:
                     test_nll = None
                 
                 if eval:
+                    # get embeddings, evaluate and log results
                     current_eval_kwargs = eval_kwargs.copy()
                     current_eval_kwargs['plot_fname'] = current_eval_kwargs['plot_fname'] + f'_epoch{int(next_ckpt_epoch)}'
                     self.model.get_cell_embeddings_and_nll(self.adata, self.batch_size, batch_col=batch_col, emb_names=[self.model.clustering_input])
                     if isinstance(self.model, scETM):
                         self.model.write_topic_gene_embeddings_to_tensorboard(writer, self.adata.var_names, f'gene_topic_emb_epoch{int(next_ckpt_epoch)}')
                     result = evaluate(adata = self.adata, embedding_key = self.model.clustering_input, **current_eval_kwargs)
-                    if eval_result_log_path is not None:
-                        with open(eval_result_log_path, 'a+') as f:
-                            # ckpt_dir, epoch, test_nll, ari, nmi, k_bet, ebm, time, seed
-                            f.write(f'{Path(self.ckpt_dir).name}\t'
-                                    f'{next_ckpt_epoch}\t'
-                                    f'{test_nll}\t'
-                                    f'{result["ari"]}\t'
-                                    f'{result["nmi"]}\t'
-                                    f'{result["k_bet"]}\t'
-                                    f'{result["ebm"]}\t'
-                                    f'{time.strftime("%m_%d-%H_%M_%S")}\t'
-                                    f'{self.seed}\n')
+                    result['test_nll'] = test_nll
+                    self._log_eval_result(result, next_ckpt_epoch, writer, eval_result_log_path)
 
                 if next_ckpt_epoch and save_model_ckpt and self.ckpt_dir is not None:
                     # checkpointing
@@ -313,6 +305,29 @@ class UnsupervisedTrainer:
         _logger.info("Optimization Finished: %s" % self.ckpt_dir)
         if isinstance(sampler, MultithreadedCellSampler):
             sampler.join(0.1)
+
+    def _log_eval_result(self,
+        result: Mapping[str, Union[float, None, Figure]],
+        next_ckpt_epoch: int,
+        writer: Union[None, SummaryWriter],
+        eval_result_log_path: Union[str, None] = None
+    ) -> None:
+        if writer is not None:
+            for k, v in result:
+                if isinstance(v, float):
+                    writer.add_scalar(k, v, next_ckpt_epoch)
+        if eval_result_log_path is not None:
+            with open(eval_result_log_path, 'a+') as f:
+                # ckpt_dir, epoch, test_nll, ari, nmi, k_bet, ebm, time, seed
+                f.write(f'{Path(self.ckpt_dir).name}\t'
+                        f'{next_ckpt_epoch}\t'
+                        f'{result["test_nll"]}\t'
+                        f'{result["ari"]}\t'
+                        f'{result["nmi"]}\t'
+                        f'{result["k_bet"]}\t'
+                        f'{result["ebm"]}\t'
+                        f'{time.strftime("%m_%d-%H_%M_%S")}\t'
+                        f'{self.seed}\n')
 
 
 class _stats_recorder:
