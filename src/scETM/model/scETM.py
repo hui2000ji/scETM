@@ -6,6 +6,7 @@ from scipy.sparse import spmatrix
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.utils.tensorboard import SummaryWriter
 from torch.distributions import Normal, Independent
 
 from scETM.model.BaseCellModel import BaseCellModel
@@ -25,6 +26,8 @@ class scETM(BaseCellModel):
     From paper "Learning interpretable cellular and gene signature
     embeddings from single-cell transcriptomic data".
     Link: https://www.biorxiv.org/content/10.1101/2021.01.13.426593v1.full
+
+    Notations: K - n_topics; G - n_genes; L - emb_dim.
 
     Attributes:
         clustering_input: name of the embedding used for clustering.
@@ -58,7 +61,7 @@ class scETM(BaseCellModel):
         rho_trainable_emb: part of the gene embedding matrix (rho) with shape
             [L_trainable, G], where a submatrix of shape [L_trainable, G_fixed]
             is fixed and the rest is trainable.
-        alpha: the topic embedding matrix.
+        alpha: topic embedding matrix with shape [K, L_fixed + L_trainable].
         batch_bias: the batch specific bias. Only present if enable_batch_bias
             is True.
         global_bias: the global bias. Only present if enable_global_bias is
@@ -141,7 +144,7 @@ class scETM(BaseCellModel):
             self.enable_batch_bias = False
             self.input_batch_id = False
 
-        self.q_delta = get_fully_connected_layers(
+        self.q_delta: nn.Sequential = get_fully_connected_layers(
             n_trainable_input=self.n_trainable_genes + ((self.n_batches - 1) if self.input_batch_id else 0),
             hidden_sizes=self.hidden_sizes,
             bn=self.bn,
@@ -149,10 +152,11 @@ class scETM(BaseCellModel):
             n_fixed_input=self.n_fixed_genes
         )
         hidden_dim = self.hidden_sizes[-1]
-        self.mu_q_delta = nn.Linear(hidden_dim, self.n_topics, bias=True)
-        self.logsigma_q_delta = nn.Linear(hidden_dim, self.n_topics, bias=True)
+        self.mu_q_delta: nn.Linear = nn.Linear(hidden_dim, self.n_topics, bias=True)
+        self.logsigma_q_delta: nn.Linear = nn.Linear(hidden_dim, self.n_topics, bias=True)
 
-        self.rho_fixed_emb, self.rho_trainable_emb = None, None
+        self.rho_fixed_emb: Union[None, torch.Tensor] = None
+        self.rho_trainable_emb: Union[None, PartlyTrainableParameter2D] = None
         self._init_rho_trainable_emb()
         if self.trainable_gene_emb_dim > 0 and self.n_fixed_genes > 0 and rho_fixed_gene is not None:
             assert rho_fixed_gene.shape == (self.trainable_gene_emb_dim, self.n_fixed_genes)
@@ -161,13 +165,13 @@ class scETM(BaseCellModel):
             assert rho_fixed_emb.shape[1] == self.n_fixed_genes + self.n_trainable_genes
             self.rho_fixed_emb = torch.FloatTensor(rho_fixed_emb).to(device)
 
-        self.alpha = nn.Parameter(torch.randn(self.n_topics, self.trainable_gene_emb_dim + (self.rho_fixed_emb.shape[0] if self.rho_fixed_emb is not None else 0)))
+        self.alpha: nn.Parameter = nn.Parameter(torch.randn(self.n_topics, self.trainable_gene_emb_dim + (self.rho_fixed_emb.shape[0] if self.rho_fixed_emb is not None else 0)))
         self._init_batch_and_global_biases()
 
         self.to(device)
 
     @property
-    def rho(self):
+    def rho(self) -> torch.Tensor:
         """The fixed and trainable combined gene embedding rho.
 
         This is a read-only property. To modify the gene embeddings, please
@@ -178,7 +182,7 @@ class scETM(BaseCellModel):
         rho = torch.cat(rho, dim=0) if len(rho) > 1 else rho[0]
         return rho
 
-    def _init_encoder_first_layer(self):
+    def _init_encoder_first_layer(self) -> None:
         """Initializes the first layer of the encoder given the constant
         attributes.
         """
@@ -189,19 +193,19 @@ class scETM(BaseCellModel):
         else:
             self.q_delta[0] = nn.Linear(trainable_dim, self.hidden_sizes[0])
 
-    def _init_rho_trainable_emb(self):
+    def _init_rho_trainable_emb(self) -> None:
         """Initializes self.rho_trainable_emb given the constant attributes."""
 
         if self.trainable_gene_emb_dim > 0:
             self.rho_trainable_emb = PartlyTrainableParameter2D(self.trainable_gene_emb_dim, self.n_fixed_genes, self.n_trainable_genes)
 
-    def _init_batch_and_global_biases(self):
+    def _init_batch_and_global_biases(self) -> None:
         """Initializes batch and global biases given the constant attributes."""
 
         if self.enable_batch_bias:
-            self.batch_bias = nn.Parameter(torch.randn(self.n_batches, self.n_fixed_genes + self.n_trainable_genes))
+            self.batch_bias: nn.Parameter = nn.Parameter(torch.randn(self.n_batches, self.n_fixed_genes + self.n_trainable_genes))
         
-        self.global_bias = nn.Parameter(torch.randn(1, self.n_fixed_genes + self.n_trainable_genes)) if self.enable_global_bias else None
+        self.global_bias: nn.Parameter = nn.Parameter(torch.randn(1, self.n_fixed_genes + self.n_trainable_genes)) if self.enable_global_bias else None
 
     def decode(self,
         theta: torch.Tensor,
@@ -298,7 +302,8 @@ class scETM(BaseCellModel):
         batch_size: int = 2000,
         emb_names: Union[str, Iterable[str], None] = None,
         batch_col: str = 'batch_indices',
-        inplace: bool = True
+        inplace: bool = True,
+        tensorboard_dir: Union[None, str] = None
     ) -> Union[Union[None, float], Tuple[Mapping[str, np.ndarray], Union[None, float]]]:
         """Calculates cell, gene, topic embeddings and nll for the dataset.
 
@@ -317,6 +322,7 @@ class scETM(BaseCellModel):
             batch_col: a key in adata.obs to the batch column. Only used when
                 self.need_batch is True.
             inplace: whether embeddings will be stored to adata or returned.
+            tensorboard_dir: directory to save the topic and gene embeddings.
 
         Returns:
             If inplace, only the test nll. Otherwise, return the cell, gene and
@@ -324,12 +330,45 @@ class scETM(BaseCellModel):
         """
 
         result = super().get_cell_embeddings_and_nll(adata, batch_size=batch_size, emb_names=emb_names, batch_col=batch_col, inplace=inplace)
+        if tensorboard_dir is not None:
+            self.write_topic_gene_embeddings_to_tensorboard(tensorboard_dir, adata.var_names)
         if inplace:
-            adata.varm['rho'] = self.rho.T
-            adata.uns['alpha'] = self.alpha
+            adata.varm['rho'] = self.rho.T.detach().cpu().numpy()
+            adata.uns['alpha'] = self.alpha.detach().cpu().numpy()
             return result
         else:
             result_dict, nll = result
-            result_dict['rho'] = self.rho.T
-            result_dict['alpha'] = self.alpha
+            result_dict['rho'] = self.rho.T.detach().cpu().numpy()
+            result_dict['alpha'] = self.alpha.detach().cpu().numpy()
             return result_dict, nll
+
+    def write_topic_gene_embeddings_to_tensorboard(self,
+        tensorboard_dir: Union[None, str],
+        gene_names: Union[None, Sequence[str]] = None,
+        tag: Union[None, str] = None
+    ) -> None:
+        """Write topic and gene embeddings to tensorboard.
+
+        Args:
+            tensorboard_dir: directory to save the topic and gene embeddings.
+        """
+
+        if tensorboard_dir is None:
+            return
+
+        _logger.info('Writing topic and gene embeddings to tensorboard...')
+        writer = SummaryWriter(tensorboard_dir)
+
+        if gene_names is None:
+            gene_names = [f'gene{i}' for i in range(self.n_trainable_genes + self.n_fixed_genes)]
+        else:
+            gene_names = list(gene_names)
+        topic_names = [f'topic{i}' for i in range(self.n_topics)]
+        names = gene_names + topic_names
+
+        gene_emb = self.rho.T.detach().cpu().numpy()
+        topic_emb = self.alpha.detach().cpu().numpy()
+        embs = np.concatenate([gene_emb, topic_emb], axis=0)
+
+        writer.add_embedding(embs, names, tag=tag)
+        writer.close()

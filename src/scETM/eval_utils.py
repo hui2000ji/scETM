@@ -69,7 +69,7 @@ def evaluate(adata: ad.AnnData,
         plot_ftype: file type of the generated plot. Only used if is drawing.
         plot_dir: directory to save the generated plot. If None, do not save
             the plot.
-        tensorboard_dir: directory to save tensorboard logs. Only used is
+        tensorboard_dir: directory to save the UMAP plot. Only used if is
             drawing.
         min_dist: the min_dist argument in sc.tl.umap. Only used is drawing.
         spread: the spread argument in sc.tl.umap. Only used if is drawing.
@@ -446,7 +446,7 @@ def draw_embeddings(adata: ad.AnnData,
         If return_fig is True, return the figure containing the plot.
     """
 
-    _logger.info(f'Plotting UMAP embeddings')
+    _logger.info(f'Plotting UMAP embeddings...')
     sc.tl.umap(adata, min_dist=min_dist, spread=spread)
     fig = sc.pl.umap(adata, color=color_by, show=False, return_fig=True)
     if ckpt_dir is not None:
