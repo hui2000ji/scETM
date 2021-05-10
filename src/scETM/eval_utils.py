@@ -5,6 +5,7 @@ import numpy as np
 import scanpy as sc
 import anndata as ad
 import pandas as pd
+from torch.utils.tensorboard import SummaryWriter
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 from scipy.sparse.csr import spmatrix
@@ -30,12 +31,12 @@ def evaluate(adata: ad.AnnData,
     clustering_method: str = "leiden",
     cell_type_col: str = "cell_types",
     batch_col: Union[str, None] = "batch_indices",
-    draw: bool = True,
     color_by: Iterable[str] = None,
     return_fig: bool = False,
     plot_fname: str = "umap",
     plot_ftype: str = "pdf",
     plot_dir: Union[str, None] = None,
+    tensorboard_dir: Union[str, None] = None,
     min_dist: float = 0.3,
     spread: float = 1,
     n_jobs: int = 1,
@@ -44,8 +45,11 @@ def evaluate(adata: ad.AnnData,
     """Evaluates the clustering and batch correction performance of the given
     embeddings, and optionally plots the embeddings.
 
-    WARNING: In an interactive environment, set n_jobs to 1 to avoid pickling
-    error.
+    Embeddings will be plotted if return_fig is True or plot_dir is provided.
+    When tensorboard_dir is provided, will also save the embeddings using a
+    tensorboard SummaryWriter.
+
+    NOTE: Set n_jobs to 1 if you encounter pickling error.
 
     Args:
         adata: the dataset with the embedding to be evaluated.
@@ -57,18 +61,18 @@ def evaluate(adata: ad.AnnData,
             'louvain'.
         cell_type_col: a key in adata.obs to the cell type column.
         batch_col: a key in adata.obs to the batch column.
-        draw: whether to plot the embeddings.
         return_fig: whether to return the Figure object. Useful for visualizing
-            the plot. Only used if draw is True.
+            the plot.
         color_by: a list of adata.obs column keys to color the embeddings by.
-            Only used if draw is True.
-        plot_fname: file name of the generated plot. Only used if draw is True.
-        plot_ftype: file type of the generated plot. Only used if draw is True.
+            Only used if is drawing.
+        plot_fname: file name of the generated plot. Only used if is drawing.
+        plot_ftype: file type of the generated plot. Only used if is drawing.
         plot_dir: directory to save the generated plot. If None, do not save
-            the plot. Only used if draw is True.
-        min_dist: the min_dist argument in sc.tl.umap. Only used if draw is
-            True.
-        spread: the spread argument in sc.tl.umap. Only used if draw is True.
+            the plot.
+        tensorboard_dir: directory to save tensorboard logs. Only used is
+            drawing.
+        min_dist: the min_dist argument in sc.tl.umap. Only used is drawing.
+        spread: the spread argument in sc.tl.umap. Only used if is drawing.
         n_jobs: # jobs to generate. If <= 0, this is set to the number of
             physical cores.
         random_state: random state for knn calculation.
@@ -116,13 +120,16 @@ def evaluate(adata: ad.AnnData,
         ebm = k_bet = None
 
     # plot UMAP embeddings
-    if draw and (return_fig or plot_dir is not None):
+    if return_fig or plot_dir is not None:
         if color_by is None:
             color_by = [batch_col, cell_type_col] if need_batch else [cell_type_col]
         if cluster_key is not None:
             color_by = [cluster_key] + color_by
         fig = draw_embeddings(adata=adata, color_by=color_by, min_dist=min_dist, spread=spread,
             ckpt_dir=plot_dir, fname=f'{plot_fname}.{plot_ftype}', return_fig=return_fig)
+        writer = SummaryWriter(tensorboard_dir)
+        writer.add_embedding(adata.obsm['X_umap'], tag=plot_fname)
+        writer.close()
     else:
         fig = None
     
@@ -135,8 +142,10 @@ def evaluate(adata: ad.AnnData,
     )
 
 
-def _eff_n_jobs(n_jobs: int) -> int:
+def _eff_n_jobs(n_jobs: Union[None, int]) -> int:
     """If n_jobs <= 0, set it as the number of physical cores _cpu_count"""
+    if n_jobs is None:
+        return 1
     return int(n_jobs) if n_jobs > 0 else _cpu_count
 
 
@@ -197,7 +206,7 @@ def calculate_kbet(
     n_neighbors: int = 25,
     alpha: float = 0.05,
     random_state: int = 0,
-    n_jobs: int = -1,
+    n_jobs: Union[None, int] = None,
     calc_knn: bool = True
 ) -> Tuple[float, float, float]:
     """Calculates the kBET metric of the data.
@@ -292,7 +301,7 @@ def calculate_entropy_batch_mixing(
     n_pools: int = 50,
     n_samples_per_pool: int = 100,
     random_state: int = 0,
-    n_jobs: int = -1,
+    n_jobs: Union[None, int] = None,
     calc_knn: bool = True
 ) -> float:
     """Calculates the entropy of batch mixing of the data.
@@ -323,9 +332,9 @@ def calculate_entropy_batch_mixing(
     knn_indices = _get_knn_indices(adata, use_rep, n_neighbors, random_state, calc_knn)
 
     from joblib import Parallel, delayed, parallel_backend
-    with parallel_backend("loky", inner_max_num_threads=1):
+    with parallel_backend("loky", n_jobs=n_jobs, inner_max_num_threads=1):
         score = np.mean(
-            Parallel(n_jobs=n_jobs)(
+            Parallel()(
                 delayed(_entropy_batch_mixing_for_one_pool)(
                     adata.obs[batch_col], knn_indices, nsample, n_samples_per_pool
                 )

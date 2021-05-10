@@ -99,7 +99,7 @@ if __name__ == '__main__':
         save_model_ckpt = not args.no_model_ckpt,
         eval = not args.no_eval,
         record_log_path = os.path.join(trainer.ckpt_dir, 'record.tsv'),
-        tensorboard_log_path = os.path.join(trainer.ckpt_dir, 'tensorboard'),
+        tensorboard_dir = os.path.join(trainer.ckpt_dir, 'tensorboard'),
         eval_result_log_path = os.path.join(args.ckpt_dir, 'result.tsv'),
         eval_kwargs = dict(resolutions=args.resolutions, color_by=args.color_by)
     )
