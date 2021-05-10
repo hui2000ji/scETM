@@ -116,7 +116,7 @@ def evaluate(adata: ad.AnnData,
         ebm = k_bet = None
 
     # plot UMAP embeddings
-    if draw:
+    if draw and (return_fig or plot_dir is not None):
         if color_by is None:
             color_by = [batch_col, cell_type_col] if need_batch else [cell_type_col]
         if cluster_key is not None:
