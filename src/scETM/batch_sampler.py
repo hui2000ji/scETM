@@ -142,8 +142,9 @@ class CellSampler():
             library_size = torch.FloatTensor(self.library_size[batch])
             X = self.X[batch, :]
             if self.is_sparse:
-                X = X.tocoo()
-                cells = torch.sparse.FloatTensor(torch.LongTensor([X.row, X.col], torch.FloatTensor(X.data), X.shape))
+                # X = X.tocoo()
+                # cells = torch.sparse.FloatTensor(torch.LongTensor([X.row, X.col]), torch.FloatTensor(X.data), X.shape)
+                cells = torch.FloatTensor(X.todense())
             else:
                 cells = torch.FloatTensor(X)
             cell_indices = torch.LongTensor(batch)

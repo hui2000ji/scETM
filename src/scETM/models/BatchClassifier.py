@@ -20,6 +20,7 @@ class BatchClassifier(nn.Module):
         bn: bool = False,
         bn_track_running_stats: bool = False,
         dropout_prob = 0.2,
+        adversarial_loss = 'confuse',
         device=torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     ) -> None:
         """Docstring (TODO)
@@ -36,6 +37,8 @@ class BatchClassifier(nn.Module):
             dropout_prob=dropout_prob,
         ).to(device)
         self.n_output = n_output
+        assert adversarial_loss in ('confuse', 'reverse')
+        self.adversarial_loss = adversarial_loss
 
     def forward(self, X: torch.Tensor, y: torch.Tensor) -> Mapping[str, torch.Tensor]:
         """Docstring (TODO)
@@ -45,8 +48,11 @@ class BatchClassifier(nn.Module):
         if not self.training:
             return dict(logit=logit)
 
-        model_loss = (-F.log_softmax(logit, dim=-1) * torch.zeros_like(y).fill_(1/self.n_output).unsqueeze_(-1)).sum(-1).mean()
         clf_loss = F.cross_entropy(logit, y)
+        if self.adversarial_loss == 'confuse':
+            model_loss = (-F.log_softmax(logit, dim=-1) * torch.zeros_like(logit).fill_(1/self.n_output)).sum(-1).mean()
+        else:
+            model_loss = -clf_loss
         return clf_loss, dict(logit=logit, model_loss=model_loss), dict(clf_loss=clf_loss.detach().item())
 
     def train_step(self,

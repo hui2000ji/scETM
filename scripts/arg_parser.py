@@ -16,6 +16,7 @@ parser.add_argument('--no-bn', action='store_true', help='Disable batch normaliz
 parser.add_argument('--n-topics', type=int, default=50, help='number of topics in model')
 parser.add_argument('--no-batch-bias', action='store_false', dest='batch_bias', help='enable batch-specific bias')
 parser.add_argument('--global-bias', action='store_true', help='enable global gene bias')
+parser.add_argument('--adv-loss', choices=('reverse', 'confuse'), default='confuse')
 
 # Loss parameters
 parser.add_argument('--g-steps', type=int, default=1)

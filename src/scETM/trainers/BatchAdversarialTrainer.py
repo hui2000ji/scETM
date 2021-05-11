@@ -29,15 +29,17 @@ class BatchAdversarialTrainer(UnsupervisedTrainer):
         model: BaseCellModel,
         batch_clf: BatchClassifier,
         adata: anndata.AnnData,
-        ckpt_dir: Union[str, None],
-        test_ratio: float,
-        data_split_seed: int,
-        init_lr: float,
-        lr_decay: float,
-        batch_size: int,
-        train_instance_name: str,
-        restore_epoch: int,
-        seed: int
+        ckpt_dir: Union[str, None] = None,
+        test_ratio: float = 0.,
+        data_split_seed: int = 1,
+        init_lr: float = 5e-3,
+        lr_decay: float = 5e-5,
+        batch_size: int = 2000,
+        train_instance_name: str = "scETMbatch",
+        restore_epoch: int = 0,
+        seed: int = -1,
+        batch_clf_init_lr: float = 1e-3,
+        batch_clf_lr_decay: float = 5e-5,
     ) -> None:
         """Docstring here (TODO)
         """
@@ -59,16 +61,23 @@ class BatchAdversarialTrainer(UnsupervisedTrainer):
         self.batch_clf: BatchClassifier = batch_clf
 
         # instantiate the batch classifier optimizer
-        self.batch_clf_optimizer: optim.Optimizer = optim.Adam(self.batch_clf.parameters(), lr=self.init_lr)
+        self.batch_clf_init_lr = batch_clf_init_lr
+        self.batch_clf_lr = batch_clf_init_lr
+        self.batch_clf_lr_decay = batch_clf_lr_decay
+        self.batch_clf_optimizer: optim.Optimizer = optim.Adam(self.batch_clf.parameters(), lr=self.batch_clf_init_lr)
     
     def update_step(self, jump_to_step: Union[None, int] = None) -> None:
         """Docstring here (TODO)
         """
 
         super().update_step(jump_to_step=jump_to_step)
-        if self.lr_decay:
+        if self.batch_clf_lr_decay:
+            if jump_to_step is None:
+                self.batch_clf_lr *= np.exp(-self.batch_clf_lr_decay)
+            else:
+                self.batch_clf_lr = self.batch_clf_init_lr * np.exp(-jump_to_step * self.batch_clf_lr_decay)
             for param_group in self.batch_clf_optimizer.param_groups:
-                param_group['lr'] = self.lr
+                param_group['lr'] = self.batch_clf_lr
 
     def train(self,
         n_epochs: int = 800,
@@ -158,12 +167,11 @@ class BatchAdversarialTrainer(UnsupervisedTrainer):
                 loss_update_callback = None
             new_record = self.model.train_step(self.optimizer, data_dict, hyper_param_dict, loss_update_callback)
 
-        if hyper_param_dict['clf_weight'] > 0.:
-            fwd_dict = self.model(data_dict, hyper_param_dict)
-            emb = fwd_dict[self.model.clustering_input].detach()
-            for _ in range(kwargs['d_steps']):
-                clf_record = self.batch_clf.train_step(self.batch_clf_optimizer, emb, data_dict['batch_indices'])
-            new_record.update(clf_record)
+        _, fwd_dict, _ = self.model(data_dict, hyper_param_dict)
+        emb = fwd_dict[self.model.clustering_input].detach()
+        for _ in range(kwargs['d_steps']):
+            clf_record = self.batch_clf.train_step(self.batch_clf_optimizer, emb, data_dict['batch_indices'])
+        new_record.update(clf_record)
 
         return new_record, hyper_param_dict
 
@@ -190,7 +198,7 @@ class BatchAdversarialTrainer(UnsupervisedTrainer):
         embs = torch.cat(embs, dim=0)
         logits = torch.cat(logits, dim=0)
         pred = logits.argmax(-1)
-        correct = pred == adata.obs[batch_col].astype('category').cat.codes
+        correct = pred.numpy() == adata.obs[batch_col].astype('category').cat.codes
 
         adata.obsm[self.model.clustering_input] = embs.numpy()
         adata.obs['clf_pred'] = np.array(pred, dtype='str')
