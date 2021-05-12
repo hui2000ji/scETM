@@ -22,7 +22,7 @@ parser.add_argument('--adv-loss', choices=('reverse', 'confuse'), default='confu
 parser.add_argument('--g-steps', type=int, default=1)
 parser.add_argument('--d-steps', type=int, default=8)
 parser.add_argument('--max-kl-weight', type=float, default=1e-7, help='max weight for kl divergence')
-parser.add_argument('--max-clf-weight', type=float, default=0.02, help='max weight for model loss')
+parser.add_argument('--max-clf-weight', type=float, default=0.005, help='max weight for model loss')
 parser.add_argument('--min-kl-weight', type=float, default=0, help='min weight for kl divergence')
 parser.add_argument('--min-clf-weight', type=float, default=0, help='min weight for model loss')
 parser.add_argument('--kl-warmup-ratio', type=float, default=1/3, help='gradually increase weight of the kl divergence loss during the first args.kl_warmup_ratio training epochs')
