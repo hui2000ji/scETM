@@ -31,7 +31,9 @@ class scETM(BaseCellModel):
 
     Attributes:
         clustering_input: name of the embedding used for clustering.
-        emb_names: name of embeddings returned by self.forward.
+        emb_names: name of embeddings returned by self.forward. This includes:
+            - delta: the unnormalized cell embeddings
+            - theta: the softmax-normalized cell embeddings
         max_logsigma: maximum value of logsigma allowed to avoid nans.
         min_logsigma: minimum value of logsigma allowed to avoid nans.
         n_topics: #topics in the model.
@@ -69,7 +71,7 @@ class scETM(BaseCellModel):
     """
 
     clustering_input: str = "delta"
-    emb_names: Sequence[str] = ['delta', 'theta', 'recon_log']
+    emb_names: Sequence[str] = ['delta', 'theta']
     max_logsigma = 10
     min_logsigma = -10
 
@@ -303,7 +305,7 @@ class scETM(BaseCellModel):
         emb_names: Union[str, Iterable[str], None] = None,
         batch_col: str = 'batch_indices',
         inplace: bool = True,
-        tensorboard_dir: Union[None, str] = None
+        writer: Union[None, SummaryWriter] = None
     ) -> Union[Union[None, float], Tuple[Mapping[str, np.ndarray], Union[None, float]]]:
         """Calculates cell, gene, topic embeddings and nll for the dataset.
 
@@ -322,7 +324,7 @@ class scETM(BaseCellModel):
             batch_col: a key in adata.obs to the batch column. Only used when
                 self.need_batch is True.
             inplace: whether embeddings will be stored to adata or returned.
-            tensorboard_dir: directory to save the topic and gene embeddings.
+            writer: an initialized SummaryWriter.
 
         Returns:
             If inplace, only the test nll. Otherwise, return the cell, gene and
@@ -330,8 +332,8 @@ class scETM(BaseCellModel):
         """
 
         result = super().get_cell_embeddings_and_nll(adata, batch_size=batch_size, emb_names=emb_names, batch_col=batch_col, inplace=inplace)
-        if tensorboard_dir is not None:
-            self.write_topic_gene_embeddings_to_tensorboard(tensorboard_dir, adata.var_names)
+        if writer is not None:
+            self.write_topic_gene_embeddings_to_tensorboard(writer, adata.var_names)
         if inplace:
             adata.varm['rho'] = self.rho.T.detach().cpu().numpy()
             adata.uns['alpha'] = self.alpha.detach().cpu().numpy()

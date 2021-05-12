@@ -79,6 +79,7 @@ class BatchAdversarialTrainer(UnsupervisedTrainer):
             for param_group in self.batch_clf_optimizer.param_groups:
                 param_group['lr'] = self.batch_clf_lr
 
+    @log_arguments
     def train(self,
         n_epochs: int = 800,
         eval_every: int = 200,

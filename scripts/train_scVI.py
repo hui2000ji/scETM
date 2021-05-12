@@ -20,6 +20,7 @@ initialize_logger(logger=logger)
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--h5ad-path', type=str, required=True, help='path to h5ad file')
+    parser.add_argument('--target-h5ad-path', type=str, default='', help='path to target h5ad file')
     parser.add_argument('--lr', type=float, default=1e-3, help='learning rate of the model')
     parser.add_argument('--no-batch-removal', action='store_false', dest='batch_removal', help="whether to do batch correction")
     parser.add_argument('--ckpt-dir', type=str, help='path to checkpoint directory',
@@ -56,6 +57,8 @@ if __name__ == '__main__':
     if not args.restore:
         ckpt_dir = os.path.join(args.ckpt_dir, f"{dataset_name}_{args.model}_seed{args.seed}_{strftime('%m_%d-%H_%M_%S')}")
         os.makedirs(ckpt_dir)
+    else:
+        ckpt_dir = args.ckpt_dir
 
     start_time = time()
     start_mem = psutil.Process().memory_info().rss
@@ -95,21 +98,48 @@ if __name__ == '__main__':
         )
         trainer.train(n_epochs=args.n_epochs, lr=args.lr)
         full = trainer.create_posterior(trainer.model, dataset, indices=np.arange(len(dataset)))
-        full = full.update({"batch_size": 64})
-
         full.save_posterior(os.path.join(ckpt_dir, 'posterior'))
     
-    latent, batch_indices, labels = full.sequential().get_latent()
-    batch_indices = batch_indices.ravel()
-
     time_cost = time() - start_time
     mem_cost = psutil.Process().memory_info().rss - start_mem
     logger.info(f'Duration: {time_cost:.1f} s ({time_cost / 60:.1f} min)')
     logger.info(f'After model instantiation and training: {psutil.Process().memory_info()}')
 
-    if not args.no_eval:
+    if not args.no_eval and not args.target_h5ad_path:
+        latent, batch_indices, labels = full.sequential().get_latent()
         adata.obsm["scVI"] = latent
-        result = evaluate(adata, embedding_key = "scVI", resolutions = args.resolutions, plot_dir = ckpt_dir)
+        result = evaluate(adata,
+            embedding_key = "scVI",
+            resolutions = args.resolutions,
+            plot_dir = ckpt_dir,
+            plot_fname = f'{dataset_name}_{args.model}_seed{args.seed}_eval',
+        )
         with open(os.path.join(args.ckpt_dir, 'table1.tsv'), 'a+') as f:
             # dataset, model, seed, ari, nmi, ebm, k_bet
             f.write(f'{dataset_name}\t{args.model}\t{args.seed}\t{result["ari"]}\t{result["nmi"]}\t{result["ebm"]}\t{result["k_bet"]}\t{time_cost}\t{mem_cost/1024}\n')
+    
+    if args.target_h5ad_path:
+        target_adata = anndata.read_h5ad(args.target_h5ad_path)
+        target_dataset_name = Path(args.target_h5ad_path).stem
+        target_dataset = AnnDatasetFromAnnData(target_adata)
+        trainer = UnsupervisedTrainer(
+            model,
+            target_dataset,
+            train_size=1.,
+            use_cuda=torch.cuda.is_available(),
+            frequency=5,
+            batch_size=args.batch_size
+        )
+        target_posterior = trainer.create_posterior(trainer.model, target_dataset)
+
+        target_latent, target_batch_indices, target_labels = target_posterior.sequential().get_latent()
+        target_adata.obsm["scVI"] = target_latent
+        result = evaluate(target_adata,
+            embedding_key = "scVI",
+            resolutions = args.resolutions,
+            plot_dir = ckpt_dir,
+            plot_fname = f'{target_dataset_name}_{args.model}_seed{args.seed}_eval',
+        )
+        with open(os.path.join(args.ckpt_dir, 'transfer.tsv'), 'a+') as f:
+            # dataset, tgt_dataset, model, seed, ari, nmi, ebm, k_bet, time_cost, mem_cost
+            f.write(f'{dataset_name}\t{target_dataset_name}\t{args.model}\t{args.seed}\t{result["ari"]}\t{result["nmi"]}\t{result["ebm"]}\t{result["k_bet"]}\t{time_cost}\t{mem_cost}\n')
