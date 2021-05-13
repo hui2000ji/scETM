@@ -45,13 +45,14 @@ sc$settings$set_figure_params(
 # Load dataset
 dataset_str <- basename(args$h5seurat_path)
 dataset_str <- substring(dataset_str, 1, nchar(dataset_str) - 9)
+model_name <- if (args$seurat) "LigerSeurat" else "Liger"
 seurat_obj <- LoadH5Seurat(args$h5seurat_path)
 metadata <- seurat_obj@meta.data
 batches <- names(table(metadata$batch_indices))
 print(batches)
 genes_use <- row.names(seurat_obj@assays$RNA@data)[rowSums(seurat_obj@assays$RNA@data) > 0]
 
-ckpt_dir <- file.path(args$ckpt_dir, sprintf("%s_Liger%d_%s_seed%d", dataset_str, args$subset_genes, strftime(Sys.time(),"%m_%d-%H_%M_%S"), args$seed))
+ckpt_dir <- file.path(args$ckpt_dir, sprintf("%s_%s%d_%s_seed%d", dataset_str, model_name, args$subset_genes, strftime(Sys.time(),"%m_%d-%H_%M_%S"), args$seed))
 if (!dir.exists((ckpt_dir))) {
     dir.create(ckpt_dir)
 }
@@ -59,8 +60,8 @@ scETM <- import("scETM")
 scETM$initialize_logger(ckpt_dir = ckpt_dir)
 anndata <- import("anndata")
 
-fpath <- file.path(ckpt_dir, sprintf("%s_Liger.h5ad", dataset_str))
-h5seurat_fpath <- file.path(ckpt_dir, sprintf("%s_Liger.h5seurat", dataset_str))
+fpath <- file.path(ckpt_dir, sprintf("%s_%s.h5ad", dataset_str, model_name))
+h5seurat_fpath <- file.path(ckpt_dir, sprintf("%s_%s.h5seurat", dataset_str, model_name))
 
 # Run algo, print result and save images
 start_time <- proc.time()[3]
@@ -115,8 +116,8 @@ if (!args$no_eval) {
         plot_dir = ckpt_dir,
         n_jobs = 1L
     )
-    line <- sprintf("%s\tLiger%s\t%s\t%.4f\t%.4f\t%.5f\t%.5f\t%.2f\t%d",
-        dataset_str, if (args$seurat) "Seurat" else "", args$seed,
+    line <- sprintf("%s\t%s\t%s\t%.4f\t%.4f\t%.5f\t%.5f\t%.2f\t%.0f",
+        dataset_str, model_name, args$seed,
         result$ari, result$nmi, result$ebm, result$k_bet,
         time_cost, mem_cost)
     write(line, file = file.path(args$ckpt_dir, "table1.tsv"), append = T)
