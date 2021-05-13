@@ -1,3 +1,10 @@
+try:
+    import tensorflow as tf
+    import tensorboard as tb
+    tf.io.gfile = tb.compat.tensorflow_stub.io.gfile
+except:
+    pass
+
 import psutil
 from torch.utils.tensorboard import SummaryWriter
 from arg_parser import parser

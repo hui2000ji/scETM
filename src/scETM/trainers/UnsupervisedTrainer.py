@@ -278,9 +278,9 @@ class UnsupervisedTrainer:
                 _logger.info(repr(psutil.Process().memory_info()))
                 # log current lr and kl_weight
                 if self.lr_decay:
-                    _logger.info(f'{"lr":12s}: {self.lr}')
+                    _logger.info(f'{"lr":12s}: {self.lr:12.4g}')
                 for k, v in hyper_param_dict.items():
-                    _logger.info(f'{k:12s}: {v:12.4f}')
+                    _logger.info(f'{k:12s}: {v:12.4g}')
 
                 # log statistics of tracked items
                 recorder.log_and_clear_record()
