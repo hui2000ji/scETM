@@ -6,7 +6,8 @@ from scETM import evaluate
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--h5ad-path')
+parser.add_argument('--resolutions', type=float, nargs='+', default=[0.75, 1, 1.3, 1.6, 2])
 args = parser.parse_args()
 
 adata = anndata.read_h5ad(args.h5ad_path)
-evaluate(adata, embedding_key='X', resolutions=[0.1, 0.15, 0.22, 0.34, 0.51, 0.76], plot_dir=str(Path(args.h5ad_path).parent))
+evaluate(adata, embedding_key='X', resolutions=args.resolutions, plot_dir=str(Path(args.h5ad_path).parent))
