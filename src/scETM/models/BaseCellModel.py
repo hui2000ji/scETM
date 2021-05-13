@@ -169,6 +169,8 @@ class BaseCellModel(nn.Module):
         embs = {name: torch.cat(embs[name], dim=0).numpy() for name in emb_names}
         if nlls is not None:
             nll = sum(nlls) / adata.n_obs
+        else:
+            nll = None
 
         if inplace:
             adata.obsm.update(embs)
