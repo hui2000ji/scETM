@@ -2,6 +2,7 @@ import argparse
 import anndata
 import matplotlib
 import scanpy as sc
+from torch.utils.tensorboard import SummaryWriter
 from pathlib import Path
 
 from scETM import evaluate
@@ -14,5 +15,7 @@ parser.add_argument('--h5ad-path')
 parser.add_argument('--resolutions', type=float, nargs='+', default=[0.75, 1])
 args = parser.parse_args()
 
+d = Path(args.h5ad_path).parent
 adata = anndata.read_h5ad(args.h5ad_path)
-evaluate(adata, embedding_key='X', resolutions=args.resolutions, plot_dir=str(Path(args.h5ad_path).parent))
+writer = SummaryWriter(str(d))
+evaluate(adata, embedding_key='X', resolutions=args.resolutions, plot_dir=str(d), writer=writer)
