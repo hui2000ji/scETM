@@ -17,5 +17,5 @@ args = parser.parse_args()
 
 d = Path(args.h5ad_path).parent
 adata = anndata.read_h5ad(args.h5ad_path)
-writer = SummaryWriter(str(d))
+writer = SummaryWriter(str(d / 'tensorboard'))
 evaluate(adata, embedding_key='X', resolutions=args.resolutions, plot_dir=str(d), writer=writer)
