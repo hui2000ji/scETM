@@ -86,8 +86,10 @@ def evaluate(adata: ad.AnnData,
 
     if not pd.api.types.is_categorical_dtype(adata.obs[cell_type_col]):
         _logger.warning("scETM.evaluate assumes discrete cell types. Converting cell_type_col to categorical.")
+        adata.obs[cell_type_col] = adata.obs[cell_type_col].astype(str).astype('category')
     if not pd.api.types.is_categorical_dtype(adata.obs[batch_col]):
         _logger.warning("scETM.evaluate assumes discrete batches. Converting batch_col to categorical.")
+        adata.obs[batch_col] = adata.obs[batch_col].astype(str).astype('category')
 
     # calculate neighbors
     _get_knn_indices(adata, use_rep=embedding_key, n_neighbors=n_neighbors, random_state=random_state, calc_knn=True)
