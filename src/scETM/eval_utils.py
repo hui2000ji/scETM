@@ -12,7 +12,7 @@ from scipy.sparse.csr import spmatrix
 from scipy.stats import chi2
 from typing import Mapping, Sequence, Tuple, Iterable, Union
 from scipy.sparse import issparse
-from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score
+from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score, silhouette_score
 from sklearn.neighbors import NearestNeighbors
 from scETM.logging_utils import log_arguments
 import psutil
@@ -78,9 +78,10 @@ def evaluate(adata: ad.AnnData,
         random_state: random state for knn calculation.
 
     Returns:
-        A dict storing the ari, nmi, ebm and k_bet of the cell embeddings with
-        key "ari", "nmi", "ebm", "k_bet", respectively. If draw is True and
-        return_fig is True, will also store the plotted figure with key "fig".
+        A dict storing the ari, nmi, asw, ebm and k_bet of the cell embeddings
+        with key "ari", "nmi", "asw", "ebm", "k_bet", respectively. If draw is
+        True and return_fig is True, will also store the plotted figure with
+        key "fig".
     """
 
     if not pd.api.types.is_categorical_dtype(adata.obs[cell_type_col]):
@@ -96,6 +97,8 @@ def evaluate(adata: ad.AnnData,
         cluster_key, best_ari, best_nmi = clustering(adata, resolutions=resolutions, cell_type_col=cell_type_col, batch_col=batch_col, clustering_method=clustering_method)
     else:
         cluster_key = best_ari = best_nmi = None
+
+    asw = silhouette_score(adata.X if embedding_key == 'X' else adata.obsm[embedding_key], adata.obs[cell_type_col])
 
     # calculate batch correction metrics
     need_batch = batch_col and adata.obs[batch_col].nunique() > 1
@@ -137,6 +140,7 @@ def evaluate(adata: ad.AnnData,
     return dict(
         ari=best_ari,
         nmi=best_nmi,
+        asw=asw,
         ebm=ebm,
         k_bet=k_bet,
         fig=fig
