@@ -118,6 +118,7 @@ if (!args$no_eval) {
         embedding_key = "X_pca",
         resolutions = args$resolutions,
         plot_dir = ckpt_dir,
+        plot_fname=sprintf("%s_Seuratv3_seed%d_eval", dataset_str, args$seed),
         n_jobs = 1L
     )
     line <- sprintf("%s\tSeuratv3\t%s\t%.4f\t%.4f\t%.5f\t%.5f\t%.2f\t%.0f",

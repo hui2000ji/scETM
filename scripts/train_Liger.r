@@ -114,6 +114,7 @@ if (!args$no_eval) {
         embedding_key = if (args$seurat) "X_iNMF" else "H_norm",
         resolutions = args$resolutions,
         plot_dir = ckpt_dir,
+        plot_fname=sprintf("%s_%s_seed%d_eval", dataset_str, model_name, args$seed),
         n_jobs = 1L
     )
     line <- sprintf("%s\t%s\t%s\t%.4f\t%.4f\t%.5f\t%.5f\t%.2f\t%.0f",
