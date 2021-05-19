@@ -257,7 +257,7 @@ class UnsupervisedTrainer:
         
         # set up the stats recorder
         recorder = _stats_recorder(record_log_path=record_log_path, writer=writer, metadata=self.adata.obs)
-        next_ckpt_epoch = int(np.ceil(self.epoch / eval_every) * eval_every)
+        next_ckpt_epoch = min(int(np.ceil(self.epoch / eval_every) * eval_every), n_epochs)
 
         while self.epoch < n_epochs:
             new_record, hyper_param_dict = self.do_train_step(dataloader,
@@ -307,7 +307,7 @@ class UnsupervisedTrainer:
                     self.save_model_and_optimizer(next_ckpt_epoch)
 
                 _logger.info('=' * 10 + f'End of evaluation' + '=' * 10)
-                next_ckpt_epoch += eval_every
+                next_ckpt_epoch = min(eval_every + next_ckpt_epoch, n_epochs)
 
         del recorder
         _logger.info("Optimization Finished: %s" % self.ckpt_dir)
