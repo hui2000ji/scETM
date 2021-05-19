@@ -99,6 +99,7 @@ def evaluate(adata: ad.AnnData,
         cluster_key = best_ari = best_nmi = None
 
     asw = silhouette_score(adata.X if embedding_key == 'X' else adata.obsm[embedding_key], adata.obs[cell_type_col])
+    _logger.info(f'{embedding_key}_ASW: {asw:7.4f}')
 
     # calculate batch correction metrics
     need_batch = batch_col and adata.obs[batch_col].nunique() > 1
