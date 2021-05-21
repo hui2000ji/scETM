@@ -6,6 +6,7 @@ import scanpy as sc
 import anndata as ad
 import pandas as pd
 from torch.utils.tensorboard import SummaryWriter
+import matplotlib
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 from scipy.sparse.csr import spmatrix
@@ -467,3 +468,37 @@ def draw_embeddings(adata: ad.AnnData,
         return fig
     fig.clf()
     plt.close(fig)
+
+
+def set_figure_params(matplotlib_backend: str='agg',
+    dpi: int=120,
+    dpi_save: int=250,
+    frameon: bool = True,
+    vector_friendly: bool = True,
+    fontsize: int=10,
+    figsize: Sequence[int]=(10, 10)
+):
+    """Set figure parameters.
+    Args
+        backend: the backend to switch to.  This can either be one of th
+            standard backend names, which are case-insensitive:
+            - interactive backends:
+                GTK3Agg, GTK3Cairo, MacOSX, nbAgg,
+                Qt4Agg, Qt4Cairo, Qt5Agg, Qt5Cairo,
+                TkAgg, TkCairo, WebAgg, WX, WXAgg, WXCairo
+            - non-interactive backends:
+                agg, cairo, pdf, pgf, ps, svg, template
+            or a string of the form: ``module://my.module.name``.
+
+        dpi: resolution of rendered figures – this influences the size of
+            figures in notebooks.
+        dpi_save: resolution of saved figures. This should typically be higher
+            to achieve publication quality.
+        frameon: add frames and axes labels to scatter plots.
+        vector_friendly: plot scatter plots using `png` backend even when
+            exporting as `pdf` or `svg`.
+        fontsize: the fontsize for several `rcParams` entries.
+        figsize: plt.rcParams['figure.figsize'].
+    """
+    matplotlib.use(matplotlib_backend)
+    sc.set_figure_params(dpi=dpi, dpi_save=dpi_save, figsize=figsize, fontsize=fontsize, frameon=frameon, vector_friendly=vector_friendly)
