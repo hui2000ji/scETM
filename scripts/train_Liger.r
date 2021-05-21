@@ -52,7 +52,7 @@ batches <- names(table(metadata$batch_indices))
 print(batches)
 genes_use <- row.names(seurat_obj@assays$RNA@data)[rowSums(seurat_obj@assays$RNA@data) > 0]
 
-ckpt_dir <- file.path(args$ckpt_dir, sprintf("%s_%s%d_%s_seed%d", dataset_str, model_name, args$subset_genes, strftime(Sys.time(),"%m_%d-%H_%M_%S"), args$seed))
+ckpt_dir <- file.path(args$ckpt_dir, sprintf("%s_%s%d_seed%d_%s", dataset_str, model_name, args$subset_genes, args$seed, strftime(Sys.time(),"%m_%d-%H_%M_%S")))
 if (!dir.exists((ckpt_dir))) {
     dir.create(ckpt_dir)
 }
