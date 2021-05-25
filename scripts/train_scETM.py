@@ -88,7 +88,17 @@ if __name__ == '__main__':
             device = torch.device(args.device)
         )
     elif args.model.startswith('scVI'):
-        model = None
+        model = scVI(
+            n_trainable_genes = adata.n_vars,
+            n_batches = adata.obs.batch_indices.nunique(),
+            n_topics = args.n_topics,
+            hidden_sizes = args.hidden_sizes,
+            bn = not args.no_bn,
+            dropout_prob = args.dropout_prob,
+            norm_cells = args.norm_cells,
+            enable_batch_specific_dispersion = args.batch_bias,
+            device = torch.device(args.device)
+        )
     else:
         raise NotImplementedError
 

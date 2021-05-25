@@ -59,7 +59,7 @@ class scVI(BaseCellModel):
             hidden_sizes=hidden_sizes,
             n_trainable_output=self.n_topics * 4,
             bn=bn,
-            drop_prob=dropout_prob
+            dropout_prob=dropout_prob
         )
         
         hidden_sizes = list(hidden_sizes).copy()
@@ -70,7 +70,7 @@ class scVI(BaseCellModel):
             hidden_sizes=hidden_sizes,
             n_trainable_output=self.n_genes,
             bn=bn,
-            drop_prob=dropout_prob
+            dropout_prob=dropout_prob
         )
 
         if enable_batch_specific_dispersion:
