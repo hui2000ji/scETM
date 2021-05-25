@@ -17,7 +17,7 @@ import anndata
 import pandas as pd
 import logging
 from pathlib import Path
-from scETM import scETM, UnsupervisedTrainer, initialize_logger, evaluate
+from scETM import scETM, scVI, UnsupervisedTrainer, initialize_logger, evaluate
 import matplotlib
 from scETM.models.BatchClassifier import BatchClassifier
 
@@ -72,22 +72,27 @@ if __name__ == '__main__':
     start_mem = psutil.Process().memory_info().rss
     logger.info(f'Before model instantiation and training: {psutil.Process().memory_info()}')
 
-    model = scETM(
-        n_trainable_genes = adata.n_vars,
-        n_batches = adata.obs.batch_indices.nunique(),
-        n_topics = args.n_topics,
-        trainable_gene_emb_dim = args.trainable_gene_emb_dim,
-        hidden_sizes = args.hidden_sizes,
-        bn = not args.no_bn,
-        dropout_prob = args.dropout_prob,
-        norm_cells = args.norm_cells,
-        normed_loss = args.normed_loss,
-        enable_batch_bias = args.batch_bias,
-        rho_fixed_emb=adata.varm['gene_emb'].T if 'gene_emb' in adata.varm else None,
-        device = torch.device(args.device)
-    )
+    if args.model.startswith('scETM'):
+        model = scETM(
+            n_trainable_genes = adata.n_vars,
+            n_batches = adata.obs.batch_indices.nunique(),
+            n_topics = args.n_topics,
+            trainable_gene_emb_dim = args.trainable_gene_emb_dim,
+            hidden_sizes = args.hidden_sizes,
+            bn = not args.no_bn,
+            dropout_prob = args.dropout_prob,
+            norm_cells = args.norm_cells,
+            normed_loss = args.normed_loss,
+            enable_batch_bias = args.batch_bias,
+            rho_fixed_emb=adata.varm['gene_emb'].T if 'gene_emb' in adata.varm else None,
+            device = torch.device(args.device)
+        )
+    elif args.model.startswith('scVI'):
+        model = None
+    else:
+        raise NotImplementedError
 
-    if args.model == 'scETMbatch':
+    if args.model.endswith('batch'):
         trainer = BatchAdversarialTrainer(
             model,
             BatchClassifier(model.n_topics, model.n_batches, (model.n_topics, model.n_topics // 2), device = torch.device(args.device), adversarial_loss=args.adv_loss),

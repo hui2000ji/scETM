@@ -206,3 +206,7 @@ class BatchAdversarialTrainer(UnsupervisedTrainer):
         adata.obs['clf_pred'] = adata.obs['clf_pred'].astype('category').cat.set_categories(adata.obs[batch_col].cat.categories)
         adata.obs['clf_correct'] = np.array(correct, dtype='str')
         adata.obs['clf_correct'] = adata.obs['clf_correct'].astype('category')
+        if 'color_by' not in adata.uns:
+            adata.uns['color_by'] = {'clf_pred', 'clf_correct'}
+        else:
+            adata.uns['color_by'] |= {'clf_pred', 'clf_correct'}

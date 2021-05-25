@@ -65,7 +65,8 @@ def evaluate(adata: ad.AnnData,
         return_fig: whether to return the Figure object. Useful for visualizing
             the plot.
         color_by: a list of adata.obs column keys to color the embeddings by.
-            Only used if is drawing.
+            If None, will look up adata.uns['color_by']. Only used if is
+            drawing.
         plot_fname: file name of the generated plot. Only used if is drawing.
         plot_ftype: file type of the generated plot. Only used if is drawing.
         plot_dir: directory to save the generated plot. If None, do not save
@@ -130,10 +131,10 @@ def evaluate(adata: ad.AnnData,
     if return_fig or plot_dir is not None:
         if color_by is None:
             color_by = [batch_col, cell_type_col] if need_batch else [cell_type_col]
+            if 'color_by' in adata.uns:
+                color_by = list(adata.uns['color_by']) + color_by
         if cluster_key is not None:
             color_by = [cluster_key] + color_by
-        if 'clf_pred' in adata.obs:
-            color_by = ['clf_pred', 'clf_correct'] + color_by
         fig = draw_embeddings(adata=adata, color_by=color_by, min_dist=min_dist, spread=spread,
             ckpt_dir=plot_dir, fname=f'{plot_fname}.{plot_ftype}', return_fig=return_fig)
         if writer is not None:

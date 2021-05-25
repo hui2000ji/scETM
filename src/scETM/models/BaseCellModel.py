@@ -57,6 +57,10 @@ class BaseCellModel(nn.Module):
         self.n_batches: int = n_batches
         self.need_batch: bool = need_batch
 
+    @property
+    def n_genes(self):
+        return self.n_trainable_genes + self.n_fixed_genes
+    
     def train_step(self,
         optimizer: optim.Optimizer,
         data_dict: Mapping[str, torch.Tensor],
