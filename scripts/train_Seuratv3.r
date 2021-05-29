@@ -113,7 +113,7 @@ if (!args$no_eval) {
     anndata <- import("anndata")
     fpath <- file.path(ckpt_dir, sprintf("%s_Seuratv3.h5ad", dataset_str))
     processed_data <- anndata$read_h5ad(fpath)
-    sc$pp$pca(processed_data, n_comps = 50L)
+    sc$pp$pca(processed_data, n_comps = args$n_pcs)
     result <- scETM$evaluate(
         processed_data,
         embedding_key = "X_pca",

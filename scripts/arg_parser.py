@@ -22,7 +22,7 @@ parser.add_argument('--adv-loss', choices=('reverse', 'confuse'), default='rever
 parser.add_argument('--g-steps', type=int, default=1)
 parser.add_argument('--d-steps', type=int, default=8)
 parser.add_argument('--max-kl-weight', type=float, default=1e-7, help='max weight for kl divergence')
-parser.add_argument('--max-clf-weight', type=float, default=0.005, help='max weight for model loss')
+parser.add_argument('--max-clf-weight', type=float, default=0.08, help='max weight for model loss')
 parser.add_argument('--max-mmd-weight', type=float, default=1, help='max weight for mmd regumarization')
 parser.add_argument('--min-kl-weight', type=float, default=0, help='min weight for kl divergence')
 parser.add_argument('--min-clf-weight', type=float, default=0, help='min weight for model loss')
