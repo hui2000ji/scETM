@@ -37,19 +37,23 @@ class scVI(BaseCellModel):
         bn: bool = True,
         dropout_prob: float = 0.1,
         norm_cells: bool = True,
+        normed_loss: bool = False,
+        reconstruction_loss: str = "nb",
         input_batch_id: bool = False,
         enable_batch_specific_dispersion: bool = True,
         device=torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     ):
-        super().__init__(n_trainable_genes, n_batches, n_fixed_genes, need_batch=n_batches > 1 and input_batch_id, device=device)
+        super().__init__(n_trainable_genes, n_batches, n_fixed_genes, need_batch=n_batches > 1 and (input_batch_id or enable_batch_specific_dispersion), device=device)
 
         self.n_topics: int = n_topics
         self.hidden_sizes: Sequence[int] = hidden_sizes
         self.bn: bool = bn
         self.dropout_prob: float = dropout_prob
         self.norm_cells: bool = norm_cells
+        self.normed_loss: bool = normed_loss
         self.input_batch_id: bool = input_batch_id
-        self.reconstruction_loss = "nb"
+        self.reconstruction_loss: str = reconstruction_loss
+        self.enable_batch_specific_dispersion = enable_batch_specific_dispersion
         if self.n_batches <= 1:
             _logger.warning(f'n_batches == {self.n_batches}, disabling batch bias')
             self.input_batch_id = False
@@ -73,27 +77,42 @@ class scVI(BaseCellModel):
             dropout_prob=dropout_prob
         )
 
-        if enable_batch_specific_dispersion:
-            self.px_total_count = nn.Parameter(torch.randn(self.n_batches, self.n_genes))
+        if self.reconstruction_loss == "mse":
+            self.recon_batch_clf = get_fully_connected_layers(
+                n_trainable_input=self.n_genes,
+                hidden_sizes=self.hidden_sizes,
+                n_trainable_output=n_batches,
+                bn=bn,
+                dropout_prob=dropout_prob
+            )
         else:
-            self.px_total_count = nn.Parameter(torch.randn(1, self.n_genes))
+            if enable_batch_specific_dispersion:
+                self.px_total_count = nn.Parameter(torch.randn(self.n_batches, self.n_genes))
+            else:
+                self.px_total_count = nn.Parameter(torch.randn(1, self.n_genes))
+            
+        self.to(device)
 
     def decode(self, z, s, data_dict):
         decoder_inputs = [z, s]
         if self.input_batch_id:
             decoder_inputs.append(self._get_batch_indices_oh(data_dict))
-            decoder_input = torch.cat(decoder_inputs, dim=-1)
+        decoder_input = torch.cat(decoder_inputs, dim=-1)
         px_logits = self.decoder(decoder_input)
-        # Clamp to high value: exp(12) ~ 160000 to avoid nans (computational stability)
-        if self.batch_scaling:
-            px_total_count = self.px_total_count[data_dict['batch_indices']].clamp(self.min_logsigma, self.max_logsigma).exp()
+
+        if self.reconstruction_loss != "mse":
+            if self.enable_batch_specific_dispersion:
+                px_total_count = self.px_total_count[data_dict['batch_indices']].clamp(self.min_logsigma, self.max_logsigma).exp()
+            else:
+                px_total_count = self.px_total_count[torch.zeros(size=(z.size(0),), dtype=torch.long, device=z.device)].clamp(self.min_logsigma, self.max_logsigma).exp()
         else:
-            px_total_count = self.px_total_count[torch.zeros(size=(z.size(0),), dtype=torch.long, device=z.device)].clamp(self.min_logsigma, self.max_logsigma).exp()
+            px_total_count = None
         return px_total_count, px_logits
 
     def forward(self, data_dict, hyper_param_dict=dict(val=True)):
         cells, library_size = data_dict['cells'], data_dict['library_size']
         normed_cells = cells / library_size
+        cells_for_loss = normed_cells if self.normed_loss else cells
         input_cells = normed_cells if self.norm_cells else cells
         if self.input_batch_id:
             input_cells = torch.cat((input_cells, self._get_batch_indices_oh(data_dict)), dim=1)
@@ -117,16 +136,29 @@ class scVI(BaseCellModel):
                 s=mu_qs,
                 total_count=total_count,
                 logits=logits,
-                nll = self.get_reconstruction_loss(cells, total_count, logits).sum()
+                nll = self.get_reconstruction_loss(cells_for_loss, total_count, logits).sum()
             )
             return fwd_dict
 
+        if self.reconstruction_loss == 'mse':
+            perm_mask = np.arange(cells.size(0), dtype=np.int64)
+            np.random.shuffle(perm_mask)
+            perm_mask = torch.LongTensor(perm_mask)
+            _, perm_logits = self.decode(z, s[perm_mask, :], data_dict)
+            perm_pred_logit = self.recon_batch_clf(perm_logits.softmax(dim=-1))
+            perm_ce = F.cross_entropy(perm_pred_logit, data_dict['batch_indices'][perm_mask])
+
+
         total_count, logits = self.decode(z, s, data_dict)
-        nll = self.get_reconstruction_loss(cells, total_count, logits).mean()
+        nll = self.get_reconstruction_loss(cells_for_loss, total_count, logits).mean()
         kl_z = get_kl(mu_qz, logsigma_qz).mean()
         kl_s = get_kl(mu_qs, logsigma_qs).mean()
-        loss = nll + hyper_param_dict['kl_z_weight'] * kl_z + hyper_param_dict['kl_s_weight'] * kl_s
-        record = dict(loss=loss, nll=nll, kl_z=kl_z, kl_s=kl_s)
+        loss = nll + hyper_param_dict['kl_weight'] * kl_z + hyper_param_dict['kl_weight'] * kl_s
+        if self.reconstruction_loss == 'mse':
+            loss += 0.2 * perm_ce
+            record = dict(loss=loss, nll=nll, kl_z=kl_z, kl_s=kl_s, perm_ce=perm_ce)
+        else:
+            record = dict(loss=loss, nll=nll, kl_z=kl_z, kl_s=kl_s, perm_ce=perm_ce)
 
         record = {k: v.detach().item() for k, v in record.items()}
 
@@ -142,7 +174,7 @@ class scVI(BaseCellModel):
     def sample_x(self, total_count, logits) -> torch.Tensor:
         # Reconstruction Loss
         if self.reconstruction_loss == "nb":
-            x = -Independent(NegativeBinomial(total_count=total_count, logits=logits), 1).sample()
+            x = Independent(NegativeBinomial(total_count=total_count, logits=logits), 1).sample()
         else:
             raise NotImplementedError
         return x
@@ -152,7 +184,9 @@ class scVI(BaseCellModel):
         """
         # Reconstruction Loss
         if self.reconstruction_loss == "nb":
-            reconst_loss = -Independent(NegativeBinomial(total_count=total_count, logits=logits), 1).log_prob(x)
+            reconst_loss = -Independent(NegativeBinomial(total_count=total_count, logits=logits, validate_args=False), 1).log_prob(x).mean()
+        elif self.reconstruction_loss == "mse":
+            reconst_loss = F.mse_loss(logits.softmax(dim=-1), x, reduction='none').sum(-1).mean()
         else:
             raise NotImplementedError
-        return reconst_loss.mean()
+        return reconst_loss

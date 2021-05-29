@@ -17,6 +17,7 @@ parser <- ArgumentParser()
 parser$add_argument("--h5seurat-path", type = "character", help = "path to the h5seurat file to be processed")
 parser$add_argument("--resolutions", type = "double", nargs = "+", default = c(0.02, 0.03, 0.04, 0.05, 0.08, 0.1, 0.2, 0.25, 0.3, 0.4), help = "resolution of leiden/louvain clustering")
 parser$add_argument("--subset-genes", type = "integer", default = 3000, help = "number of features (genes) to select, 0 for don't select")
+parser$add_argument("--n-pcs", type = "integer", default = 30, help = "number of pcs to use during integration")
 parser$add_argument("--no-eval", action = "store_true", help = "do not eval")
 parser$add_argument('--ckpt-dir', type = "character", help='path to checkpoint directory', default = file.path('..', 'results'))
 parser$add_argument("--seed", type = "integer", default = -1, help = "random seed.")
@@ -83,13 +84,13 @@ if (args$subset_genes) {
 
 anchors <- FindIntegrationAnchors(
     object.list = dataset_list,
-    dims = 1:30,
+    dims = 1:args$n_pcs,
     anchor.features = anchor_features
 )
 
 integrated <- IntegrateData(
     anchorset = anchors,
-    dims = 1:30
+    dims = 1:args$n_pcs
 )
 
 DefaultAssay(object = integrated) <- "integrated"
@@ -118,7 +119,7 @@ if (!args$no_eval) {
         embedding_key = "X_pca",
         resolutions = args$resolutions,
         plot_dir = ckpt_dir,
-        plot_fname=sprintf("%s_Seuratv3_seed%d_eval", dataset_str, args$seed),
+        plot_fname = sprintf("%s_Seuratv3_seed%d_eval", dataset_str, args$seed),
         n_jobs = 1L
     )
     line <- sprintf("%s\tSeuratv3\t%s\t%.4f\t%.4f\t%.5f\t%.5f\t%.2f\t%.0f",

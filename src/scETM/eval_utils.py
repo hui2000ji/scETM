@@ -13,7 +13,7 @@ from scipy.sparse.csr import spmatrix
 from scipy.stats import chi2
 from typing import Mapping, Sequence, Tuple, Iterable, Union
 from scipy.sparse import issparse
-from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score, silhouette_score
+from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score, silhouette_samples
 from sklearn.neighbors import NearestNeighbors
 from scETM.logging_utils import log_arguments
 import psutil
@@ -86,10 +86,10 @@ def evaluate(adata: ad.AnnData,
         key "fig".
     """
 
-    if not pd.api.types.is_categorical_dtype(adata.obs[cell_type_col]):
+    if cell_type_col and not pd.api.types.is_categorical_dtype(adata.obs[cell_type_col]):
         _logger.warning("scETM.evaluate assumes discrete cell types. Converting cell_type_col to categorical.")
         adata.obs[cell_type_col] = adata.obs[cell_type_col].astype(str).astype('category')
-    if not pd.api.types.is_categorical_dtype(adata.obs[batch_col]):
+    if batch_col and not pd.api.types.is_categorical_dtype(adata.obs[batch_col]):
         _logger.warning("scETM.evaluate assumes discrete batches. Converting batch_col to categorical.")
         adata.obs[batch_col] = adata.obs[batch_col].astype(str).astype('category')
 
@@ -102,8 +102,12 @@ def evaluate(adata: ad.AnnData,
     else:
         cluster_key = best_ari = best_nmi = None
 
-    asw = silhouette_score(adata.X if embedding_key == 'X' else adata.obsm[embedding_key], adata.obs[cell_type_col])
+    sw = silhouette_samples(adata.X if embedding_key == 'X' else adata.obsm[embedding_key], adata.obs[cell_type_col])
+    adata.obs['silhouette_width'] = sw
+    asw = np.mean(sw)
     _logger.info(f'{embedding_key}_ASW: {asw:7.4f}')
+    if batch_col and cell_type_col:
+        _logger.info(f'SW: {adata.obs.pivot_table(index=cell_type_col, columns=batch_col, values="silhouette_width", aggfunc="mean")}')
 
     # calculate batch correction metrics
     need_batch = batch_col and adata.obs[batch_col].nunique() > 1
