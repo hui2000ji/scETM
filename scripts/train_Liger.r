@@ -117,9 +117,9 @@ if (!args$no_eval) {
         plot_fname=sprintf("%s_%s_seed%d_eval", dataset_str, model_name, args$seed),
         n_jobs = 1L
     )
-    line <- sprintf("%s\t%s\t%s\t%.4f\t%.4f\t%.5f\t%.5f\t%.2f\t%.0f",
+    line <- sprintf("%s\t%s\t%s\t%.4f\t%.4f\t%.4f\t%.5f\t%.5f\t%.2f\t%.0f",
         dataset_str, model_name, args$seed,
-        result$ari, result$nmi, result$ebm, result$k_bet,
+        result$ari, result$nmi, result$asw, result$ebm, result$k_bet,
         time_cost, mem_cost)
     write(line, file = file.path(args$ckpt_dir, "table1.tsv"), append = T)
 }
