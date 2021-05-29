@@ -97,9 +97,9 @@ class BatchAdversarialTrainer(UnsupervisedTrainer):
         clf_cutoff_ratio: float = 1/6,
         clf_warmup_ratio: float = 1/3,
         min_clf_weight: float = 0.,
-        max_clf_weight: float = 0.1,
+        max_clf_weight: float = 0.005,
         g_steps: int = 1,
-        d_steps: int = 3,
+        d_steps: int = 8,
         **train_kwargs
     ) -> None:
         """Trains the model, optionally evaluates performance and logs results.
@@ -107,13 +107,15 @@ class BatchAdversarialTrainer(UnsupervisedTrainer):
         See `UnsupervisedTrainer.train` for common argument docstrings.
 
         Args:
-            clf_cutoff: cutoff of classifier weight.
+            clf_cutoff_ratio: ratio of n_epochs where the classifier weight is
+                zero.
             clf_warmup_ratio: ratio of classifier term warmup epochs and
                 n_epochs.
             min_clf_weight: minimum weight of the classifier term.
             max_clf_weight: maximum weight of the classifier term.
             g_steps: times to update scETM in a training step.
             d_steps: times to update the batch classifier in a training step.
+            train_kwargs: other kwargs to pass to self.do_train_step().
         """
 
         train_kwargs.update(dict(
@@ -202,8 +204,8 @@ class BatchAdversarialTrainer(UnsupervisedTrainer):
         correct = pred.numpy() == adata.obs[batch_col].astype('category').cat.codes
 
         adata.obsm[self.model.clustering_input] = embs.numpy()
-        adata.obs['clf_pred'] = np.array(pred, dtype='str')
-        adata.obs['clf_pred'] = adata.obs['clf_pred'].astype('category').cat.set_categories(adata.obs[batch_col].cat.categories)
+        adata.obs['clf_pred'] = adata.obs[batch_col].astype('category').cat.categories[np.array(pred)]
+        adata.obs['clf_pred'] = adata.obs['clf_pred'].astype('category')
         adata.obs['clf_correct'] = np.array(correct, dtype='str')
         adata.obs['clf_correct'] = adata.obs['clf_correct'].astype('category')
         if 'color_by' not in adata.uns:

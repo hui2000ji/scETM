@@ -22,6 +22,7 @@ import matplotlib
 from scETM.models.BatchClassifier import BatchClassifier
 
 from scETM.trainers.BatchAdversarialTrainer import BatchAdversarialTrainer
+from scETM.trainers.MMDTrainer import MMDTrainer
 
 logger = logging.getLogger(__name__)
 initialize_logger(logger=logger)
@@ -64,9 +65,9 @@ if __name__ == '__main__':
             mat = mat.reindex(index = adata.var_names, fill_value=0.0)
             adata.varm['gene_emb'] = mat.values
 
-    if hasattr(args, 'color_by') and (hasattr(args, 'no_draw') and not args.no_draw) and (hasattr(args, 'no_eval') and not args.no_eval):
-        for col_name in args.color_by:
-            assert col_name in adata.obs, f"{col_name} in args.color_by but not in adata.obs"
+    # if hasattr(args, 'color_by') and (hasattr(args, 'no_draw') and not args.no_draw) and (hasattr(args, 'no_eval') and not args.no_eval):
+    #     for col_name in args.color_by:
+    #         assert col_name in adata.obs, f"{col_name} in args.color_by but not in adata.obs"
 
     start_time = time()
     start_mem = psutil.Process().memory_info().rss
@@ -96,6 +97,8 @@ if __name__ == '__main__':
             bn = not args.no_bn,
             dropout_prob = args.dropout_prob,
             norm_cells = args.norm_cells,
+            normed_loss = args.normed_loss,
+            reconstruction_loss = "mse",
             enable_batch_specific_dispersion = args.batch_bias,
             device = torch.device(args.device)
         )
@@ -118,6 +121,20 @@ if __name__ == '__main__':
             lr_decay = args.lr_decay,
             batch_clf_init_lr = args.batch_clf_lr,
             batch_clf_lr_decay = args.batch_clf_lr_decay
+        )
+    elif args.model.endswith('mmd'):
+        trainer = MMDTrainer(
+            model,
+            adata,
+            train_instance_name = f"{args.dataset_str}_{args.model}{args.log_str}_seed{args.seed}",
+            seed = args.seed,
+            ckpt_dir = args.ckpt_dir,
+            batch_size = args.batch_size,
+            test_ratio = args.test_ratio,
+            data_split_seed = args.data_split_seed,
+            restore_epoch = args.restore_epoch,
+            init_lr = args.lr,
+            lr_decay = args.lr_decay
         )
     else:
         trainer = UnsupervisedTrainer(
@@ -155,6 +172,9 @@ if __name__ == '__main__':
         max_clf_weight = args.max_clf_weight,
         g_steps = args.g_steps,
         d_steps = args.d_steps,
+        mmd_warmup_ratio = args.mmd_warmup_ratio,
+        min_mmd_weight = args.min_mmd_weight,
+        max_mmd_weight = args.max_mmd_weight,
     )
 
     time_cost = time() - start_time
@@ -177,6 +197,7 @@ if __name__ == '__main__':
         model.get_cell_embeddings_and_nll(target_adata)
         
     result = evaluate(target_adata,
+        embedding_key = model.clustering_input,
         resolutions = args.resolutions,
         plot_fname = f'{train_instance_name}_{clustering_input}_eval',
         plot_dir = ckpt_dir,

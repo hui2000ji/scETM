@@ -131,8 +131,11 @@ def evaluate(adata: ad.AnnData,
     if return_fig or plot_dir is not None:
         if color_by is None:
             color_by = [batch_col, cell_type_col] if need_batch else [cell_type_col]
-            if 'color_by' in adata.uns:
-                color_by = list(adata.uns['color_by']) + color_by
+        color_by = list(color_by)
+        if 'color_by' in adata.uns:
+            for col in adata.uns['color_by']:
+                if col not in color_by:
+                    color_by.insert(0, col)
         if cluster_key is not None:
             color_by = [cluster_key] + color_by
         fig = draw_embeddings(adata=adata, color_by=color_by, min_dist=min_dist, spread=spread,
