@@ -62,10 +62,12 @@ if __name__ == '__main__':
     mem_cost = psutil.Process().memory_info().rss - start_mem
     logger.info(f'Duration: {time_cost:.1f} s ({time_cost / 60:.1f} min)')
     logger.info(f'After model instantiation and training: {psutil.Process().memory_info()}')
+    
+    emb = anndata.AnnData(X = np.concatenate(integrated), obs = adata.obs)
+    emb.write_h5ad(os.path.join(ckpt_dir, f"{dataset_name}_Scanorama_seed{args.seed}.h5ad"))
 
     if not args.no_eval:
-        adata.obsm["Scanorama"] = np.concatenate(integrated)
-        result = evaluate(adata, embedding_key = "Scanorama", resolutions = args.resolutions, plot_dir = ckpt_dir, plot_fname=f"{dataset_name}_Scanorama_seed{args.seed}_eval")
+        result = evaluate(emb, embedding_key = "X", resolutions = args.resolutions, plot_dir = ckpt_dir, plot_fname=f"{dataset_name}_Scanorama_seed{args.seed}_eval")
         with open(os.path.join(args.ckpt_dir, 'table1.tsv'), 'a+') as f:
             # dataset, model, seed, ari, nmi, ebm, k_bet
             f.write(f'{dataset_name}\tScanorama\t{args.seed}\t{result["ari"]}\t{result["nmi"]}\t{result["asw"]}\t{result["ebm"]}\t{result["k_bet"]}\t{time_cost}\t{mem_cost/1024}\n')

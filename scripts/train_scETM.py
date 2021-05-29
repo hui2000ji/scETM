@@ -194,8 +194,10 @@ if __name__ == '__main__':
         target_adata = adata
 
     if 'delta' not in target_adata.obsm:
-        model.get_cell_embeddings_and_nll(target_adata)
-        
+        model.get_cell_embeddings_and_nll(target_adata, emb_names='delta')
+    
+    emb = anndata.AnnData(X = target_adata.obsm['delta'], obs = target_adata.obs)
+    emb.write_h5ad(os.path.join(ckpt_dir, f"{args.dataset_str}_{args.model}_seed{args.seed}.h5ad"))
     result = evaluate(target_adata,
         embedding_key = model.clustering_input,
         resolutions = args.resolutions,

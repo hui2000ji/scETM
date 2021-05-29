@@ -133,8 +133,9 @@ if __name__ == '__main__':
         target_posterior = trainer.create_posterior(trainer.model, target_dataset)
 
         target_latent, target_batch_indices, target_labels = target_posterior.sequential().get_latent()
-        target_adata.obsm["scVI"] = target_latent
-        result = evaluate(target_adata,
+        emb = anndata.AnnData(X = target_latent, obs = target_adata.obs)
+        emb.write_h5ad(os.path.join(ckpt_dir, f"{dataset_name}_{args.model}_seed{args.seed}.h5ad"))
+        result = evaluate(emb,
             embedding_key = "scVI",
             resolutions = args.resolutions,
             plot_dir = ckpt_dir,

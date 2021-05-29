@@ -44,8 +44,6 @@ sc$settings$set_figure_params(
 dataset_str <- basename(args$h5seurat_path)
 dataset_str <- substring(dataset_str, 1, nchar(dataset_str) - 9)
 dataset <- LoadH5Seurat(args$h5seurat_path)
-batches <- names(table(dataset@meta.data$batch_indices))
-print(batches)
 
 ckpt_dir <- file.path(args$ckpt_dir, sprintf("%s_Seuratv3_%d_seed%d_%s", dataset_str, args$subset_genes, args$seed, strftime(Sys.time(),"%m_%d-%H_%M_%S")))
 if (!dir.exists((ckpt_dir))) {
@@ -53,21 +51,15 @@ if (!dir.exists((ckpt_dir))) {
 }
 scETM <- import("scETM")
 scETM$initialize_logger(ckpt_dir = ckpt_dir)
+anndata <- import("anndata")
 
-dataset_list <- list()
-for (i in seq_along(batches)) {
-    matrix_data <- dataset@assays$RNA@data[, dataset@meta.data$batch_indices == batches[[i]]]
-    dataset_list[[i]] <- CreateSeuratObject(
-        counts = matrix_data,
-        min.cell = 0,
-        min.features = 0,
-        meta.data = dataset@meta.data[dataset@meta.data$batch_indices == batches[[i]],]
-    )
-    writeLines(sprintf("<%d> batch_name: %s; shape: %s", i, batches[[i]], paste(dim(dataset_list[[i]]), collapse = ' ')))
-}
 
 start_time <- proc.time()[3]
 start_mem <- print_memory_usage()
+
+dataset_list <- SplitObject(dataset, split.by = "batch_indices")
+batches <- names(dataset_list)
+print(batches)
 
 for (i in seq_along(batches)) {
     dataset_list[[i]] <- NormalizeData(
@@ -104,19 +96,18 @@ time_cost <- proc.time()[3] - start_time
 mem_cost <- print_memory_usage() - start_mem
 writeLines(sprintf("Duration: %.1f s (%.1f min)", time_cost, time_cost / 60))
 
-fpath <- file.path(ckpt_dir, sprintf("%s_Seuratv3.h5seurat", dataset_str))
-SaveH5Seurat(integrated, file = fpath, overwrite = T)
-Convert(fpath, dest = "h5ad", overwrite = T)
-file.remove(fpath)
+integrated <- RunPCA(integrated, npcs = args$n_pcs)
+fpath <- file.path(ckpt_dir, sprintf("%s_Seuratv3_seed%d.h5ad", dataset_str, args$seed))
+processed_data <- anndata$AnnData(
+    X = integrated@reductions$pca@cell.embeddings,
+    obs = integrated@meta.data
+)
+processed_data$write_h5ad(fpath)
 
 if (!args$no_eval) {
-    anndata <- import("anndata")
-    fpath <- file.path(ckpt_dir, sprintf("%s_Seuratv3.h5ad", dataset_str))
-    processed_data <- anndata$read_h5ad(fpath)
-    sc$pp$pca(processed_data, n_comps = args$n_pcs)
     result <- scETM$evaluate(
         processed_data,
-        embedding_key = "X_pca",
+        embedding_key = "X",
         resolutions = args$resolutions,
         plot_dir = ckpt_dir,
         plot_fname = sprintf("%s_Seuratv3_seed%d_eval", dataset_str, args$seed),

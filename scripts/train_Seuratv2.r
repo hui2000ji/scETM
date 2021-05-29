@@ -52,6 +52,7 @@ if (!dir.exists((ckpt_dir))) {
 }
 scETM <- import("scETM")
 scETM$initialize_logger(ckpt_dir = ckpt_dir)
+anndata <- import("anndata")
 
 start_time <- proc.time()[3]
 start_mem <- print_memory_usage()
@@ -64,27 +65,26 @@ dataset <- FindVariableFeatures(
     verbose = FALSE
 )
 dataset <- ScaleData(dataset, features = rownames(dataset))
+dataset <- RunPCA(dataset, npcs = 50L)
 
 time_cost <- proc.time()[3] - start_time
 mem_cost <- print_memory_usage() - start_mem
 writeLines(sprintf("Duration: %.1f s (%.1f min)", time_cost, time_cost / 60))
 
-fpath <- file.path(ckpt_dir, sprintf("%s_Seuratv2.h5seurat", dataset_str))
-SaveH5Seurat(dataset, file = fpath, overwrite = T)
-Convert(fpath, dest = "h5ad", overwrite = T)
-file.remove(fpath)
+fpath <- file.path(ckpt_dir, sprintf("%s_Seuratv2_seed%d.h5ad", dataset_str, args$seed))
+processed_data <- anndata$AnnData(
+    X = dataset@reductions$pca@cell.embeddings,
+    obs = dataset@meta.data
+)
+processed_data$write_h5ad(fpath)
 
 if (!args$no_eval) {
-    anndata <- import("anndata")
-    fpath <- file.path(ckpt_dir, sprintf("%s_Seuratv2.h5ad", dataset_str))
-    processed_data <- anndata$read_h5ad(fpath)
-    sc$pp$pca(processed_data, n_comps = 50L)
     result <- scETM$evaluate(
         processed_data,
-        embedding_key = "X_pca",
+        embedding_key = "X",
         resolutions = args$resolutions,
         plot_dir = ckpt_dir,
-        plot_fname=sprintf("%s_Seuratv2_seed%d_eval", dataset_str, args$seed),
+        plot_fname = sprintf("%s_Seuratv2_seed%d_eval", dataset_str, args$seed),
         n_jobs = 1L
     )
     line <- sprintf("%s\tSeuratv2\t%s\t%.4f\t%.4f\t%.4f\t%.5f\t%.5f\t%.2f\t%.0f",

@@ -360,9 +360,10 @@ if __name__ == '__main__':
         if adata.obs.batch_indices.nunique() > 1:
             logger.info(f'ARI_batch: {adjusted_rand_score(adata.obs.batch_indices, labels)}')
             logger.info(f'NMI_batch: {normalized_mutual_info_score(adata.obs.batch_indices, labels)}')
-        adata.obsm['scVAE'] = latent
+        emb = anndata.AnnData(X = latent, obs = adata.obs)
         model_name = "scVAEBatch" if args.batch_removal else "scVAE"
-        result = evaluate(adata, embedding_key = "scVAE", resolutions = args.resolutions, plot_dir = ckpt_dir, plot_fname=f"{dataset_name}_{model_name}_seed{args.seed}_eval")
+        emb.write_h5ad(os.path.join(ckpt_dir, f"{dataset_name}_{model_name}_seed{args.seed}.h5ad"))
+        result = evaluate(emb, embedding_key = "X", resolutions = args.resolutions, plot_dir = ckpt_dir, plot_fname=f"{dataset_name}_{model_name}_seed{args.seed}_eval")
         with open(os.path.join(args.ckpt_dir, 'table1.tsv'), 'a+') as f:
             # dataset, model, seed, ari, nmi, ebm, k_bet
             f.write(f'{dataset_name}\t{model_name}\t{args.seed}\t{result["ari"]}\t{result["nmi"]}\t{result["asw"]}\t{result["ebm"]}\t{result["k_bet"]}\t{time_cost}\t{mem_cost/1024}\n')

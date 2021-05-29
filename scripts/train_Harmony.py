@@ -67,9 +67,11 @@ if __name__ == '__main__':
     logger.info(f'Duration: {time_cost:.1f} s ({time_cost / 60:.1f} min)')
     logger.info(f'After model instantiation and training: {psutil.Process().memory_info()}')
 
+    emb = anndata.AnnData(X = ho.result().T, obs = adata.obs)
+    emb.write_h5ad(os.path.join(ckpt_dir, f"{dataset_name}_Harmony_seed{args.seed}.h5ad"))
+
     if not args.no_eval:
-        adata.obsm["Harmony"] = ho.result().T
-        result = evaluate(adata, embedding_key = "Harmony", resolutions = args.resolutions, plot_dir = ckpt_dir, plot_fname=f"{dataset_name}_Harmony_seed{args.seed}_eval")
+        result = evaluate(emb, embedding_key = "X", resolutions = args.resolutions, plot_dir = ckpt_dir, plot_fname=f"{dataset_name}_Harmony_seed{args.seed}_eval")
         with open(os.path.join(args.ckpt_dir, 'table1.tsv'), 'a+') as f:
             # dataset, model, seed, ari, nmi, ebm, k_bet
             f.write(f'{dataset_name}\tHarmony\t{args.seed}\t{result["ari"]}\t{result["nmi"]}\t{result["asw"]}\t{result["ebm"]}\t{result["k_bet"]}\t{time_cost}\t{mem_cost/1024}\n')

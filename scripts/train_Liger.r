@@ -60,8 +60,7 @@ scETM <- import("scETM")
 scETM$initialize_logger(ckpt_dir = ckpt_dir)
 anndata <- import("anndata")
 
-fpath <- file.path(ckpt_dir, sprintf("%s_%s.h5ad", dataset_str, model_name))
-h5seurat_fpath <- file.path(ckpt_dir, sprintf("%s_%s.h5seurat", dataset_str, model_name))
+fpath <- file.path(ckpt_dir, sprintf("%s_%s_seed%d.h5ad", dataset_str, model_name, args$seed))
 
 # Run algo, print result and save images
 start_time <- proc.time()[3]
@@ -72,13 +71,13 @@ if (args$seurat) {
     if (args$subset_genes)
         dataset <- FindVariableFeatures(dataset, nfeatures = args$subset_genes)
     dataset <- ScaleData(dataset, split.by = "batch_indices", do.center = FALSE)
-    dataset <- RunOptimizeALS(dataset, k = 20, lambda = 5, split.by = "batch_indices", rand.seed = if(args$seed >= 0) args$seed else 1)
+    dataset <- RunOptimizeALS(dataset,
+        k = 20,
+        lambda = 5,
+        split.by = "batch_indices",
+        rand.seed = if (args$seed >= 0) args$seed else 1
+    )
     dataset <- RunQuantileNorm(dataset, knn_k = 20, split.by = "batch_indices")
-
-    SaveH5Seurat(dataset, file = h5seurat_fpath, overwrite = T)
-    Convert(h5seurat_fpath, dest = "h5ad", overwrite = T)
-    file.remove(h5seurat_fpath)
-    processed_data <- anndata$read_h5ad(fpath)
 } else {
     dataset_list <- list()
     for (i in seq_along(batches)) {
@@ -91,27 +90,34 @@ if (args$seurat) {
     if (args$subset_genes)
         dataset <- selectGenes(dataset, num.genes = args$subset_genes)
     dataset <- scaleNotCenter(dataset)
-    dataset <- optimizeALS(dataset, k = 20, lambda = 5, rand.seed = if(args$seed >= 0) args$seed else 1)
+    dataset <- optimizeALS(dataset, k = 20, lambda = 5,
+        rand.seed = if (args$seed >= 0) args$seed else 1)
     dataset <- quantile_norm(dataset, knn_k = 20)
-    
-    processed_data <- anndata$AnnData(
-        X = t(do.call(cbind, dataset@raw.data)),
-        obs = metadata,
-        obsm = list(H_norm = dataset@H.norm),
-        uns = list(V = dataset@V, W = dataset@W)
-    )
-    processed_data$write_h5ad(fpath)
 }
 
 time_cost <- proc.time()[3] - start_time
 mem_cost <- print_memory_usage() - start_mem
 writeLines(sprintf("Duration: %.1f s (%.1f min)", time_cost, time_cost / 60))
 
+if (args$seurat) {
+    processed_data <- anndata$AnnData(
+        X = dataset@reductions$iNMF@cell.embeddings,
+        obs = metadata,
+    )
+} else {
+    processed_data <- anndata$AnnData(
+        X = dataset@H.norm,
+        obs = metadata,
+        uns = list(V = dataset@V, W = dataset@W)
+    )
+}
+processed_data$write_h5ad(fpath)
+
 if (!args$no_eval) {
     scETM <- import("scETM")
     result <- scETM$evaluate(
         processed_data,
-        embedding_key = if (args$seurat) "X_iNMF" else "H_norm",
+        embedding_key = "X",
         resolutions = args$resolutions,
         plot_dir = ckpt_dir,
         plot_fname=sprintf("%s_%s_seed%d_eval", dataset_str, model_name, args$seed),
