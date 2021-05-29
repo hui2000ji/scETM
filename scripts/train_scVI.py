@@ -123,7 +123,7 @@ if __name__ == '__main__':
         target_dataset_name = Path(args.target_h5ad_path).stem
         target_dataset = AnnDatasetFromAnnData(target_adata)
         trainer = UnsupervisedTrainer(
-            full.model,
+            model,
             target_dataset,
             train_size=1.,
             use_cuda=torch.cuda.is_available(),
