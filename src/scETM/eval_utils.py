@@ -107,7 +107,10 @@ def evaluate(adata: ad.AnnData,
     asw = np.mean(sw)
     _logger.info(f'{embedding_key}_ASW: {asw:7.4f}')
     if batch_col and cell_type_col:
-        _logger.info(f'SW: {adata.obs.pivot_table(index=cell_type_col, columns=batch_col, values="silhouette_width", aggfunc="mean")}')
+        sw_table = adata.obs.pivot_table(index=cell_type_col, columns=batch_col, values="silhouette_width", aggfunc="mean")
+        _logger.info(f'SW: {sw_table}')
+        if plot_dir is not None:
+            sw_table.to_csv(os.path.join(plot_dir, f'{plot_fname}.csv'))
 
     # calculate batch correction metrics
     need_batch = batch_col and adata.obs[batch_col].nunique() > 1
