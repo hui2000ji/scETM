@@ -107,9 +107,10 @@ if __name__ == '__main__':
 
     if not args.no_eval and not args.target_h5ad_path:
         latent, batch_indices, labels = full.sequential().get_latent()
-        adata.obsm["scVI"] = latent
-        result = evaluate(adata,
-            embedding_key = "scVI",
+        emb = anndata.AnnData(X = latent, obs = adata.obs)
+        emb.write_h5ad(os.path.join(ckpt_dir, f"{dataset_name}_{args.model}_seed{args.seed}.h5ad"))
+        result = evaluate(emb,
+            embedding_key = "X",
             resolutions = args.resolutions,
             plot_dir = ckpt_dir,
             plot_fname = f'{dataset_name}_{args.model}_seed{args.seed}_eval',
@@ -134,9 +135,9 @@ if __name__ == '__main__':
 
         target_latent, target_batch_indices, target_labels = target_posterior.sequential().get_latent()
         emb = anndata.AnnData(X = target_latent, obs = target_adata.obs)
-        emb.write_h5ad(os.path.join(ckpt_dir, f"{dataset_name}_{args.model}_seed{args.seed}.h5ad"))
+        emb.write_h5ad(os.path.join(ckpt_dir, f"{target_dataset_name}_{args.model}_seed{args.seed}.h5ad"))
         result = evaluate(emb,
-            embedding_key = "scVI",
+            embedding_key = "X",
             resolutions = args.resolutions,
             plot_dir = ckpt_dir,
             plot_fname = f'{target_dataset_name}_{args.model}_seed{args.seed}_eval',
