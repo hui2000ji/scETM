@@ -115,7 +115,11 @@ if __name__ == '__main__':
             plot_dir = ckpt_dir,
             plot_fname = f'{dataset_name}_{args.model}_seed{args.seed}_eval',
         )
-        with open(os.path.join(args.ckpt_dir, 'table1.tsv'), 'a+') as f:
+        if args.restore:
+            log_path = os.path.join(os.path.pardir(args.ckpt_dir), 'table1.tsv')
+        else:
+            log_path = os.path.join(args.ckpt_dir, 'table1.tsv')
+        with open(log_path, 'a+') as f:
             # dataset, model, seed, ari, nmi, ebm, k_bet
             f.write(f'{dataset_name}\t{args.model}\t{args.seed}\t{result["ari"]}\t{result["nmi"]}\t{result["asw"]}\t{result["ebm"]}\t{result["k_bet"]}\t{time_cost}\t{mem_cost/1024}\n')
     
@@ -142,6 +146,10 @@ if __name__ == '__main__':
             plot_dir = ckpt_dir,
             plot_fname = f'{target_dataset_name}_{args.model}_seed{args.seed}_eval',
         )
-        with open(os.path.join(args.ckpt_dir, 'transfer.tsv'), 'a+') as f:
+        if args.restore:
+            log_path = os.path.join(os.path.pardir(args.ckpt_dir), 'transfer.tsv')
+        else:
+            log_path = os.path.join(args.ckpt_dir, 'transfer.tsv')
+        with open(log_path, 'a+') as f:
             # dataset, tgt_dataset, model, seed, ari, nmi, ebm, k_bet, time_cost, mem_cost
             f.write(f'{dataset_name}\t{target_dataset_name}\t{args.model}\t{args.seed}\t{result["ari"]}\t{result["nmi"]}\t{result["ebm"]}\t{result["k_bet"]}\t{time_cost}\t{mem_cost}\n')
