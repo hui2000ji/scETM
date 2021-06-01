@@ -106,6 +106,7 @@ if __name__ == '__main__':
         raise NotImplementedError
 
     if args.model.endswith('batch'):
+        args.model = f'{args.model}_{args.adv_loss}'
         trainer = BatchAdversarialTrainer(
             model,
             BatchClassifier(model.n_topics, model.n_batches, (model.n_topics, model.n_topics // 2), device = torch.device(args.device), adversarial_loss=args.adv_loss),
