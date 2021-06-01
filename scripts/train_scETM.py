@@ -208,10 +208,18 @@ if __name__ == '__main__':
         color_by=args.color_by
     )
     if args.target_h5ad_path:
-        with open(os.path.join(args.ckpt_dir, 'transfer.tsv'), 'a+') as f:
+        if args.restore_epoch:
+            log_path = os.path.join(args.ckpt_dir, '..', 'transfer.tsv')
+        else:
+            log_path = os.path.join(args.ckpt_dir, 'transfer.tsv')
+        with open(log_path, 'a+') as f:
             # dataset, tgt_dataset, model, seed, ari, nmi, ebm, k_bet, time_cost, mem_cost
             f.write(f'{args.dataset_str}\t{args.target_dataset_str}\t{args.model}{args.log_str}\t{args.seed}\t{result["ari"]}\t{result["nmi"]}\t{result["asw"]}\t{result["ebm"]}\t{result["k_bet"]}\t{time_cost}\t{mem_cost}\n')
     else:
-        with open(os.path.join(args.ckpt_dir, 'table1.tsv'), 'a+') as f:
+        if args.restore_epoch:
+            log_path = os.path.join(args.ckpt_dir, '..', 'table1.tsv')
+        else:
+            log_path = os.path.join(args.ckpt_dir, 'table1.tsv')
+        with open(log_path, 'a+') as f:
             # dataset, model, seed, ari, nmi, ebm, k_bet, time_cost, mem_cost
             f.write(f'{args.dataset_str}\t{args.model}{args.log_str}\t{args.seed}\t{result["ari"]}\t{result["nmi"]}\t{result["asw"]}\t{result["ebm"]}\t{result["k_bet"]}\t{time_cost}\t{mem_cost/1024}\n')

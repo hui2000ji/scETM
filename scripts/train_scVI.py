@@ -116,7 +116,7 @@ if __name__ == '__main__':
             plot_fname = f'{dataset_name}_{args.model}_seed{args.seed}_eval',
         )
         if args.restore:
-            log_path = os.path.join(os.path.pardir(args.ckpt_dir), 'table1.tsv')
+            log_path = os.path.join(args.ckpt_dir, '..', 'table1.tsv')
         else:
             log_path = os.path.join(args.ckpt_dir, 'table1.tsv')
         with open(log_path, 'a+') as f:
@@ -147,7 +147,7 @@ if __name__ == '__main__':
             plot_fname = f'{target_dataset_name}_{args.model}_seed{args.seed}_eval',
         )
         if args.restore:
-            log_path = os.path.join(os.path.pardir(args.ckpt_dir), 'transfer.tsv')
+            log_path = os.path.join(args.ckpt_dir, '..', 'transfer.tsv')
         else:
             log_path = os.path.join(args.ckpt_dir, 'transfer.tsv')
         with open(log_path, 'a+') as f:
