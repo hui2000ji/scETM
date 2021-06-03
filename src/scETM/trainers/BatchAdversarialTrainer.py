@@ -65,6 +65,10 @@ class BatchAdversarialTrainer(UnsupervisedTrainer):
         self.batch_clf_lr = batch_clf_init_lr
         self.batch_clf_lr_decay = batch_clf_lr_decay
         self.batch_clf_optimizer: optim.Optimizer = optim.Adam(self.batch_clf.parameters(), lr=self.batch_clf_init_lr)
+
+        if restore_epoch > 0 and type(self) == BatchAdversarialTrainer:
+            self.ckpt_dir = ckpt_dir
+            self.load_ckpt(restore_epoch, self.ckpt_dir)
     
     def update_step(self, jump_to_step: Union[None, int] = None) -> None:
         """Docstring here (TODO)

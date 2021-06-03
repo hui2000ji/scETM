@@ -50,6 +50,10 @@ class MMDTrainer(UnsupervisedTrainer):
             seed=seed
         )
 
+        if restore_epoch > 0 and type(self) == MMDTrainer:
+            self.ckpt_dir = ckpt_dir
+            self.load_ckpt(restore_epoch, self.ckpt_dir)
+
     @log_arguments
     def train(self,
         n_epochs: int = 800,
