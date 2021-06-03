@@ -72,8 +72,9 @@ mem_cost <- print_memory_usage() - start_mem
 writeLines(sprintf("Duration: %.1f s (%.1f min)", time_cost, time_cost / 60))
 
 fpath <- file.path(ckpt_dir, sprintf("%s_Seuratv2_seed%d.h5ad", dataset_str, args$seed))
+X <- dataset@reductions$pca@cell.embeddings
 processed_data <- anndata$AnnData(
-    X = dataset@reductions$pca@cell.embeddings,
+    X = X,
     obs = dataset@meta.data
 )
 processed_data$write_h5ad(fpath)

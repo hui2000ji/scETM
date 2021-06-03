@@ -98,8 +98,9 @@ writeLines(sprintf("Duration: %.1f s (%.1f min)", time_cost, time_cost / 60))
 
 integrated <- RunPCA(integrated, npcs = args$n_pcs)
 fpath <- file.path(ckpt_dir, sprintf("%s_Seuratv3_seed%d.h5ad", dataset_str, args$seed))
+X <- integrated@reductions$pca@cell.embeddings
 processed_data <- anndata$AnnData(
-    X = integrated@reductions$pca@cell.embeddings,
+    X = X,
     obs = integrated@meta.data
 )
 processed_data$write_h5ad(fpath)

@@ -100,17 +100,19 @@ mem_cost <- print_memory_usage() - start_mem
 writeLines(sprintf("Duration: %.1f s (%.1f min)", time_cost, time_cost / 60))
 
 if (args$seurat) {
-    processed_data <- anndata$AnnData(
-        X = dataset@reductions$iNMF@cell.embeddings,
-        obs = metadata,
-    )
+    X <- dataset@reductions$iNMF@cell.embeddings
+    obs <- metadata
+    uns <- NA
 } else {
-    processed_data <- anndata$AnnData(
-        X = dataset@H.norm,
-        obs = metadata,
-        uns = list(V = dataset@V, W = dataset@W)
-    )
+    X <- dataset@H.norm
+    obs <- metadata
+    uns <- list(V = dataset@V, W = dataset@W)
 }
+processed_data <- anndata$AnnData(
+    X = X,
+    obs = obs,
+    uns = uns
+)
 processed_data$write_h5ad(fpath)
 
 if (!args$no_eval) {
@@ -120,7 +122,7 @@ if (!args$no_eval) {
         embedding_key = "X",
         resolutions = args$resolutions,
         plot_dir = ckpt_dir,
-        plot_fname=sprintf("%s_%s_seed%d_eval", dataset_str, model_name, args$seed),
+        plot_fname = sprintf("%s_%s_seed%d_eval", dataset_str, model_name, args$seed),
         n_jobs = 1L
     )
     line <- sprintf("%s\t%s\t%s\t%.4f\t%.4f\t%.4f\t%.5f\t%.5f\t%.2f\t%.0f",
