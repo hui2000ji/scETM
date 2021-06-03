@@ -102,17 +102,20 @@ writeLines(sprintf("Duration: %.1f s (%.1f min)", time_cost, time_cost / 60))
 if (args$seurat) {
     X <- dataset@reductions$iNMF@cell.embeddings
     obs <- metadata
-    uns <- NA
+    processed_data <- anndata$AnnData(
+        X = X,
+        obs = obs
+    )
 } else {
     X <- dataset@H.norm
     obs <- metadata
     uns <- list(V = dataset@V, W = dataset@W)
+    processed_data <- anndata$AnnData(
+        X = X,
+        obs = obs,
+        uns = uns
+    )
 }
-processed_data <- anndata$AnnData(
-    X = X,
-    obs = obs,
-    uns = uns
-)
 processed_data$write_h5ad(fpath)
 
 if (!args$no_eval) {
