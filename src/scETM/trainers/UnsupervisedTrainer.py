@@ -112,7 +112,7 @@ class UnsupervisedTrainer:
         if restore_epoch > 0 and type(self) == UnsupervisedTrainer:
             self.ckpt_dir = ckpt_dir
             self.load_ckpt(restore_epoch, self.ckpt_dir)
-        elif ckpt_dir is not None:
+        elif ckpt_dir is not None and type(self) == UnsupervisedTrainer:
             self.ckpt_dir = os.path.join(ckpt_dir, f"{self.train_instance_name}_{time.strftime('%m_%d-%H_%M_%S')}")
             os.makedirs(self.ckpt_dir, exist_ok=True)
             initialize_logger(self.ckpt_dir)
