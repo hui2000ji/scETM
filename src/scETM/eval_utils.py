@@ -42,6 +42,7 @@ def evaluate(adata: ad.AnnData,
     spread: float = 1,
     n_jobs: int = 1,
     random_state: Union[None, int, np.random.RandomState, np.random.Generator] = 0,
+    umap_kwargs: dict = dict()
 ) -> Mapping[str, Union[float, None, Figure]]:
     """Evaluates the clustering and batch correction performance of the given
     embeddings, and optionally plots the embeddings.
@@ -78,6 +79,7 @@ def evaluate(adata: ad.AnnData,
         n_jobs: # jobs to generate. If <= 0, this is set to the number of
             physical cores.
         random_state: random state for knn calculation.
+        umap_kwargs: other kwargs to pass to sc.pl.umap.
 
     Returns:
         A dict storing the ari, nmi, asw, ebm and k_bet of the cell embeddings
@@ -145,8 +147,10 @@ def evaluate(adata: ad.AnnData,
                     color_by.insert(0, col)
         if cluster_key is not None:
             color_by = [cluster_key] + color_by
-        fig = draw_embeddings(adata=adata, color_by=color_by, min_dist=min_dist, spread=spread,
-            ckpt_dir=plot_dir, fname=f'{plot_fname}.{plot_ftype}', return_fig=return_fig)
+        fig = draw_embeddings(adata=adata, color_by=color_by,
+            min_dist=min_dist, spread=spread,
+            ckpt_dir=plot_dir, fname=f'{plot_fname}.{plot_ftype}', return_fig=return_fig,
+            umap_kwargs=umap_kwargs)
         if writer is not None:
             writer.add_embedding(adata.obsm['X_umap'], tag=plot_fname)
     else:
@@ -436,7 +440,8 @@ def draw_embeddings(adata: ad.AnnData,
         ckpt_dir: str = '.',
         fname: str = "umap.pdf",
         return_fig: bool = False,
-        dpi: int = 300
+        dpi: int = 300,
+        umap_kwargs: dict = dict()
     ) -> Union[None, Figure]:
     """Embeds, plots and optionally saves the neighborhood graph with UMAP.
 
@@ -461,6 +466,7 @@ def draw_embeddings(adata: ad.AnnData,
         return_fig: whether to return the Figure object. Useful for visualizing
             the plot.
         dpi: the dpi of the saved plot. Only used if ckpt_dir is not None.
+        umap_kwargs: other kwargs to pass to sc.pl.umap.
 
     Returns:
         If return_fig is True, return the figure containing the plot.
@@ -468,7 +474,7 @@ def draw_embeddings(adata: ad.AnnData,
 
     _logger.info(f'Plotting UMAP embeddings...')
     sc.tl.umap(adata, min_dist=min_dist, spread=spread)
-    fig = sc.pl.umap(adata, color=color_by, show=False, return_fig=True)
+    fig = sc.pl.umap(adata, color=color_by, show=False, return_fig=True, **umap_kwargs)
     if ckpt_dir is not None:
         assert os.path.exists(ckpt_dir), f'ckpt_dir {ckpt_dir} does not exist.'
         fig.savefig(
