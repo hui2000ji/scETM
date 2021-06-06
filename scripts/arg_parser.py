@@ -79,6 +79,7 @@ def add_plotting_arguments(parser):
     parser.add_argument('--n-neighbors', type=int, default=15, help='number of neighbors to compute UMAP')
     parser.add_argument('--min_dist', type=float, default=0.3, help='minimum distance b/t UMAP embedded points')
     parser.add_argument('--spread', type=float, default=1., help='scale of the embedded points')
+    parser.add_argument('--point-size', type=float, default=0., help='size of the scatterpoints, if 0., defaults to 120k / n_cells')
     # clustering
     parser.add_argument('--clustering-input', type=str, default='delta', choices=('theta', 'delta'), help="input of batch classifier")
     parser.add_argument('--clustering-method', type=str, choices=('louvain', 'leiden'), default='leiden', help='clustering algorithm')

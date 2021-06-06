@@ -145,6 +145,7 @@ if __name__ == '__main__':
             resolutions = args.resolutions,
             plot_dir = ckpt_dir,
             plot_fname = f'{target_dataset_name}_{args.model}_seed{args.seed}_eval',
+            umap_kwargs=dict(size=args.point_size)
         )
         if args.restore:
             log_path = os.path.join(args.ckpt_dir, '..', 'transfer.tsv')

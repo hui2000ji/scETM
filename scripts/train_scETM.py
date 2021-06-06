@@ -207,7 +207,8 @@ if __name__ == '__main__':
         plot_fname = f'{train_instance_name}_{clustering_input}_eval',
         plot_dir = ckpt_dir,
         writer = writer,
-        color_by=args.color_by
+        color_by=args.color_by,
+        umap_kwargs=dict(size=args.point_size)
     )
     if args.target_h5ad_path:
         if args.restore_epoch:
