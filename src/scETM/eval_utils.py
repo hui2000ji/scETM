@@ -101,7 +101,7 @@ def evaluate(adata: ad.AnnData,
     _get_knn_indices(adata, use_rep=embedding_key, n_neighbors=n_neighbors, random_state=random_state, calc_knn=True)
 
     # calculate clustering metrics
-    if cell_type_col in adata.obs:
+    if cell_type_col in adata.obs and len(resolutions) > 0:
         cluster_key, best_ari, best_nmi = clustering(adata, resolutions=resolutions, cell_type_col=cell_type_col, batch_col=batch_col, clustering_method=clustering_method)
     else:
         cluster_key = best_ari = best_nmi = None
