@@ -89,5 +89,5 @@ def add_plotting_arguments(parser):
     parser.add_argument('--figsize', type=int, nargs=2, default=(10, 10), help='size of the plotted figure')
     parser.add_argument('--fontsize', type=int, default=10, help='font size in plotted figure')
     parser.add_argument('--dpi-show', type=int, default=120, help='Resolution of shown figures')
-    parser.add_argument('--dpi-save', type=int, default=250, help='Resolution of saved figures')
+    parser.add_argument('--dpi-save', type=int, default=300, help='Resolution of saved figures')
 add_plotting_arguments(parser)

@@ -37,6 +37,7 @@ def evaluate(adata: ad.AnnData,
     plot_fname: str = "umap",
     plot_ftype: str = "pdf",
     plot_dir: Union[str, None] = None,
+    plot_dpi: int = 300,
     writer: Union[None, SummaryWriter] = None,
     min_dist: float = 0.3,
     spread: float = 1,
@@ -72,6 +73,7 @@ def evaluate(adata: ad.AnnData,
         plot_ftype: file type of the generated plot. Only used if is drawing.
         plot_dir: directory to save the generated plot. If None, do not save
             the plot.
+        plot_dpi: dpi to save the plot.
         writer: an initialized SummaryWriter to save the UMAP plot to. Only
             used if is drawing.
         min_dist: the min_dist argument in sc.tl.umap. Only used is drawing.
@@ -150,6 +152,7 @@ def evaluate(adata: ad.AnnData,
         fig = draw_embeddings(adata=adata, color_by=color_by,
             min_dist=min_dist, spread=spread,
             ckpt_dir=plot_dir, fname=f'{plot_fname}.{plot_ftype}', return_fig=return_fig,
+            dpi=plot_dpi,
             umap_kwargs=umap_kwargs)
         if writer is not None:
             writer.add_embedding(adata.obsm['X_umap'], tag=plot_fname)
@@ -487,13 +490,13 @@ def draw_embeddings(adata: ad.AnnData,
     plt.close(fig)
 
 
-def set_figure_params(matplotlib_backend: str='agg',
-    dpi: int=120,
-    dpi_save: int=250,
+def set_figure_params(
+    matplotlib_backend: str = 'agg',
+    dpi: int = 120,
     frameon: bool = True,
     vector_friendly: bool = True,
-    fontsize: int=10,
-    figsize: Sequence[int]=(10, 10)
+    fontsize: int = 10,
+    figsize: Sequence[int] = (10, 10)
 ):
     """Set figure parameters.
     Args
@@ -506,11 +509,8 @@ def set_figure_params(matplotlib_backend: str='agg',
             - non-interactive backends:
                 agg, cairo, pdf, pgf, ps, svg, template
             or a string of the form: ``module://my.module.name``.
-
         dpi: resolution of rendered figures – this influences the size of
             figures in notebooks.
-        dpi_save: resolution of saved figures. This should typically be higher
-            to achieve publication quality.
         frameon: add frames and axes labels to scatter plots.
         vector_friendly: plot scatter plots using `png` backend even when
             exporting as `pdf` or `svg`.
