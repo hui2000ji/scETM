@@ -518,4 +518,4 @@ def set_figure_params(
         figsize: plt.rcParams['figure.figsize'].
     """
     matplotlib.use(matplotlib_backend)
-    sc.set_figure_params(dpi=dpi, dpi_save=dpi_save, figsize=figsize, fontsize=fontsize, frameon=frameon, vector_friendly=vector_friendly)
+    sc.set_figure_params(dpi=dpi, figsize=figsize, fontsize=fontsize, frameon=frameon, vector_friendly=vector_friendly)
