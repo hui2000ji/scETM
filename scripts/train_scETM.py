@@ -208,7 +208,7 @@ if __name__ == '__main__':
         plot_dir = ckpt_dir,
         writer = writer,
         color_by=args.color_by,
-        umap_kwargs=dict(size=args.point_size)
+        umap_kwargs=dict(size=args.point_size if args.point_size else None)
     )
     if args.target_h5ad_path:
         if args.restore_epoch:

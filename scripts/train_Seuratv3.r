@@ -19,6 +19,7 @@ parser$add_argument("--resolutions", type = "double", nargs = "+", default = c(0
 parser$add_argument("--subset-genes", type = "integer", default = 3000, help = "number of features (genes) to select, 0 for don't select")
 parser$add_argument("--n-pcs", type = "integer", default = 30, help = "number of pcs to use during integration")
 parser$add_argument("--no-eval", action = "store_true", help = "do not eval")
+parser$add_argument("--reference", action = "store_true", help = "use the largest batch as reference")
 parser$add_argument('--ckpt-dir', type = "character", help='path to checkpoint directory', default = file.path('..', 'results'))
 parser$add_argument("--seed", type = "integer", default = -1, help = "random seed.")
 
@@ -61,11 +62,19 @@ dataset_list <- SplitObject(dataset, split.by = "batch_indices")
 batches <- names(dataset_list)
 print(batches)
 
+largest_batch <- NA
+largest_batch_sample_size <- 0
+
 for (i in seq_along(batches)) {
     dataset_list[[i]] <- NormalizeData(
         object = dataset_list[[i]],
         verbose = FALSE
     )
+    ncells <- dim(dataset_list[[i]])[2]
+    if (ncells > largest_batch_sample_size) {
+        largest_batch <- i
+        largest_batch_sample_size <- ncells
+    }
 }
 
 if (args$subset_genes) {
@@ -74,11 +83,20 @@ if (args$subset_genes) {
     anchor_features <- rownames(dataset@assays$RNA@data)
 }
 
-anchors <- FindIntegrationAnchors(
-    object.list = dataset_list,
-    dims = 1:args$n_pcs,
-    anchor.features = anchor_features
-)
+if (args$reference){
+    anchors <- FindIntegrationAnchors(
+        object.list = dataset_list,
+        dims = 1:args$n_pcs,
+        anchor.features = anchor_features,
+        reference = largest_batch
+    )
+} else {
+    anchors <- FindIntegrationAnchors(
+        object.list = dataset_list,
+        dims = 1:args$n_pcs,
+        anchor.features = anchor_features
+    )
+}
 
 integrated <- IntegrateData(
     anchorset = anchors,
