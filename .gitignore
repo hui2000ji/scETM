@@ -9,4 +9,6 @@ build
 dist
 logs
 data
-scripts/**/*.ipynb
+scripts/*.ipynb
+scripts/*.zip
+scripts/heatmap_fig/AD
