@@ -17,6 +17,7 @@ This repository includes detailed instructions for installation and requirements
     - [A taste of scETM](#a-taste-of-scetm)
     - [p-scETM](#p-scetm)
     - [Transfer learning](#transfer-learning)
+    - [Tensorboard Integration](#tensorboard-integration)
   - [4 Benchmarking](#4-benchmarking)
 
 ## 1 Model Overview
@@ -97,6 +98,8 @@ trainer = UnsupervisedTrainer(model, hp, train_instance_name="HP_all_fix", ckpt_
 trainer.train(n_epochs=800, eval_every=200)
 ```
 
+### Tensorboard Integration
+If a Tensorboard SummaryWriter is passed to the `writer` argument of the `UnsupervisedTrainer.train` method, the package will store.
 
 ## 4 Benchmarking
 The commands used for running [Harmony](https://github.com/immunogenomics/harmony), [Scanorama](https://github.com/brianhie/scanorama), [Seurat](https://satijalab.org/seurat/), [scVAE-GM](https://github.com/scvae/scvae), [scVI](https://github.com/YosefLab/scvi-tools), [LIGER](https://github.com/welch-lab/liger), [scVI-LD](https://www.biorxiv.org/content/10.1101/737601v1.full.pdf) are available in the [scripts](/scripts) folder.

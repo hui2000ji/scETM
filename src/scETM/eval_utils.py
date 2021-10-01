@@ -106,15 +106,18 @@ def evaluate(adata: ad.AnnData,
     else:
         cluster_key = best_ari = best_nmi = None
 
-    sw = silhouette_samples(adata.X if embedding_key == 'X' else adata.obsm[embedding_key], adata.obs[cell_type_col])
-    adata.obs['silhouette_width'] = sw
-    asw = np.mean(sw)
-    _logger.info(f'{embedding_key}_ASW: {asw:7.4f}')
-    if batch_col and cell_type_col:
-        sw_table = adata.obs.pivot_table(index=cell_type_col, columns=batch_col, values="silhouette_width", aggfunc="mean")
-        _logger.info(f'SW: {sw_table}')
-        if plot_dir is not None:
-            sw_table.to_csv(os.path.join(plot_dir, f'{plot_fname}.csv'))
+    if adata.obs[cell_type_col].nunique() > 1:
+        sw = silhouette_samples(adata.X if embedding_key == 'X' else adata.obsm[embedding_key], adata.obs[cell_type_col])
+        adata.obs['silhouette_width'] = sw
+        asw = np.mean(sw)
+        _logger.info(f'{embedding_key}_ASW: {asw:7.4f}')
+        if batch_col and cell_type_col:
+            sw_table = adata.obs.pivot_table(index=cell_type_col, columns=batch_col, values="silhouette_width", aggfunc="mean")
+            _logger.info(f'SW: {sw_table}')
+            if plot_dir is not None:
+                sw_table.to_csv(os.path.join(plot_dir, f'{plot_fname}.csv'))
+    else:
+        asw = 0.
 
     # calculate batch correction metrics
     need_batch = batch_col and adata.obs[batch_col].nunique() > 1
