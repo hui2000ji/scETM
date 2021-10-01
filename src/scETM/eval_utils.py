@@ -101,12 +101,8 @@ def evaluate(adata: ad.AnnData,
     _get_knn_indices(adata, use_rep=embedding_key, n_neighbors=n_neighbors, random_state=random_state, calc_knn=True)
 
     # calculate clustering metrics
-    if cell_type_col in adata.obs and len(resolutions) > 0:
+    if cell_type_col in adata.obs and len(resolutions) > 0 and adata.obs[cell_type_col].nunique() > 1:
         cluster_key, best_ari, best_nmi = clustering(adata, resolutions=resolutions, cell_type_col=cell_type_col, batch_col=batch_col, clustering_method=clustering_method)
-    else:
-        cluster_key = best_ari = best_nmi = None
-
-    if adata.obs[cell_type_col].nunique() > 1:
         sw = silhouette_samples(adata.X if embedding_key == 'X' else adata.obsm[embedding_key], adata.obs[cell_type_col])
         adata.obs['silhouette_width'] = sw
         asw = np.mean(sw)
@@ -117,7 +113,7 @@ def evaluate(adata: ad.AnnData,
             if plot_dir is not None:
                 sw_table.to_csv(os.path.join(plot_dir, f'{plot_fname}.csv'))
     else:
-        asw = 0.
+        asw = cluster_key = best_ari = best_nmi = None
 
     # calculate batch correction metrics
     need_batch = batch_col and adata.obs[batch_col].nunique() > 1
