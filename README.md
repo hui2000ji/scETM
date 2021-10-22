@@ -17,6 +17,8 @@ This repository includes detailed instructions for installation and requirements
     - [A taste of scETM](#a-taste-of-scetm)
     - [p-scETM](#p-scetm)
     - [Transfer learning](#transfer-learning)
+      - [Pre-aligned datasets](#pre-aligned-datasets)
+      - [Unaligned datasets](#unaligned-datasets)
     - [Tensorboard Integration](#tensorboard-integration)
   - [4 Benchmarking](#4-benchmarking)
 
@@ -70,6 +72,37 @@ If it is desired to fix the gene embedding matrix ρ during training, let traina
 
 ### Transfer learning
 
+#### Pre-aligned datasets
+
+In this setting, the source and target dataset are pre-aligned, meaning they have the same / homologous gene **lists** (note that the order of the genes would have to be aligned).
+
+```python
+from scETM import scETM, UnsupervisedTrainer, prepare_for_transfer
+import anndata
+
+# Prepare the aligned source dataset, Mouse Pancreas
+mp = anndata.read_h5ad("MousePancreas_aligned.h5ad")
+# Load the aligned target dataset, Human Pancreas
+hp = anndata.read_h5ad('HumanPancreas_aligned.h5ad')
+# Initialize model
+model = scETM(mp.n_vars, mp.obs.batch_indices.nunique(), enable_batch_bias=True)
+# The trainer object will set up the random seed, optimizer, training and evaluation loop, checkpointing and logging.
+trainer = UnsupervisedTrainer(model, mp, train_instance_name="MP", ckpt_dir="../results")
+# Train the model on adata for 12000 epochs, and evaluate every 1000 epochs. Use 4 threads to sample minibatches.
+trainer.train(n_epochs=12000, eval_every=1000, n_samplers=4)
+# Directly apply MP-trained model on HP, storing cell embeddings to hp.obsm['delta'] (zero-shot transfer).
+model.get_cell_embeddings_and_nll(hp, emb_names='delta')
+# Evaluate the model and save the embedding plot
+evaluate(hp, embedding_key="delta", plot_fname="scETM_MP_to_HP", plot_dir="figures/scETM_transfer")
+# Optionally, instantiate another trainer to fine-tune the model
+trainer = UnsupervisedTrainer(model, hp, train_instance_name="HP_MPtransfer", ckpt_dir="../results", init_lr=5e-4)
+trainer.train(n_epochs=800, eval_every=200)
+```
+
+#### Unaligned datasets
+
+In this setting, a model is trained for the source dataset, and then adapted to (fine-tuned on) the target dataset, which could have different gene sets. The `prepare_for_transfer` function discards the parameters tied to the source-dataset-unique genes and randomly initializes those tied to the target-dataset-unique genes. Because of this significant change, the model would usually require fine-tuning before used to evaluate the target dataset.
+
 ```python
 from scETM import scETM, UnsupervisedTrainer, prepare_for_transfer
 import anndata
@@ -99,7 +132,11 @@ trainer.train(n_epochs=800, eval_every=200)
 ```
 
 ### Tensorboard Integration
-If a Tensorboard SummaryWriter is passed to the `writer` argument of the `UnsupervisedTrainer.train` method, the package will store.
+
+If a Tensorboard SummaryWriter is passed to the `writer` argument of the `UnsupervisedTrainer.train` method, the trainer will automatically log cell, gene and topic embeddings to a tensorboard logdir. The gene and topic embeddings are in the same space.
+
+![tb_cell](doc/tensorboard_cell.png)
+![tb_gene_topic](doc/tensorboard_genetopic.png)
 
 ## 4 Benchmarking
 The commands used for running [Harmony](https://github.com/immunogenomics/harmony), [Scanorama](https://github.com/brianhie/scanorama), [Seurat](https://satijalab.org/seurat/), [scVAE-GM](https://github.com/scvae/scvae), [scVI](https://github.com/YosefLab/scvi-tools), [LIGER](https://github.com/welch-lab/liger), [scVI-LD](https://www.biorxiv.org/content/10.1101/737601v1.full.pdf) are available in the [scripts](/scripts) folder.
