@@ -14,6 +14,7 @@ This repository includes detailed instructions for installation and requirements
   - [2 Installation](#2-installation)
   - [3 Usage](#3-usage)
     - [Data format](#data-format)
+    - [Number of training epochs](#number-of-training-epochs)
     - [A taste of scETM](#a-taste-of-scetm)
     - [p-scETM](#p-scetm)
     - [Transfer learning](#transfer-learning)
@@ -44,6 +45,9 @@ To enable GPU computing (which significantly boosts the performance), please ins
 scETM requires a cells-by-genes matrix `adata` as input, in the format of an AnnData object. Detailed description about AnnData can be found [here](https://anndata.readthedocs.io/en/latest/).
 
 By default, scETM looks for batch information in the 'batch_indices' column of the `adata.obs` DataFrame, and cell type identity in the 'cell_types' column. If your data stores the batch and cell type information in different columns, pass them to the `batch_col` and `cell_type_col` arguments, respectively, when calling scETM functions.
+
+### Number of training epochs
+Note that scETM is trained via batched gradient descent. For small datasets (e.g. MousePancreas which contains 1886 cells) and large mini-batch sizes (e.g. 2000), training one epoch generates only one gradient step (i.e. updates model parameter only once) as the whole dataset can be fit into a single mini-batch. In these cases, it is recommended to set the number of training epochs such that there is at least 6k gradient updates to the model. Otherwise, the model may not have converged when training stops.
 
 ### A taste of scETM
 
